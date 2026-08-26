@@ -6,7 +6,7 @@ import {
   recupererAnnonces, recupererAnnonce, publierAnnonce, recupererMesAnnonces,
   enregistrerVue, demarrerConversation, recupererConversations, envoyerMessage,
   recupererMessages, ecouterNouveauxMessages, recupererCategories,
-  recupererProfil, mettreAJourProfil, envoyerPhoto, marquerVendu,
+  recupererProfil, mettreAJourProfil, envoyerPhoto, marquerVendu, laisserAvis,
 } from "./lib/djemaApi";
 
 // ============================================
@@ -176,17 +176,20 @@ function EcranAuth({ onConnecte }) {
 // ---------- ACCUEIL ----------
 function EcranAccueil({ onOuvrirAnnonce, onNaviguer }) {
   const [annonces, setAnnonces] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [categorieActive, setCategorieActive] = useState("Tout");
   const [chargement, setChargement] = useState(true);
 
   useEffect(() => {
+    recupererCategories().then(({ data }) => setCategories(data || []));
     recupererAnnonces().then(({ data, error }) => {
       if (!error) setAnnonces(data || []);
       setChargement(false);
     });
   }, []);
 
-  const filtrees = categorieActive === "Tout" ? annonces : annonces.filter((a) => a.categorie_nom === categorieActive);
+  const categorieActiveId = categories.find((c) => c.nom === categorieActive && !c.categorie_parent_id)?.id;
+  const filtrees = categorieActive === "Tout" ? annonces : annonces.filter((a) => a.categorie_id === categorieActiveId);
 
   return (
     <>
@@ -470,6 +473,10 @@ function EcranMessagerie({ conversationOuverte, onOuvrirConversation, onRetour }
   const [conversations, setConversations] = useState([]);
   const [messages, setMessages] = useState([]);
   const [texte, setTexte] = useState("");
+  const [avisOuvert, setAvisOuvert] = useState(false);
+  const [noteAvis, setNoteAvis] = useState(5);
+  const [commentaireAvis, setCommentaireAvis] = useState("");
+  const [avisEnvoye, setAvisEnvoye] = useState(false);
 
   useEffect(() => {
     if (!conversationOuverte) {
@@ -491,6 +498,15 @@ function EcranMessagerie({ conversationOuverte, onOuvrirConversation, onRetour }
     setTexte("");
   };
 
+  const soumettreAvis = async () => {
+    const autrePersonne = conversationOuverte.vendeur_id;
+    const { error } = await laisserAvis(autrePersonne, conversationOuverte.id, noteAvis, commentaireAvis);
+    if (!error) {
+      setAvisEnvoye(true);
+      setAvisOuvert(false);
+    }
+  };
+
   if (conversationOuverte) {
     return (
       <>
@@ -498,8 +514,30 @@ function EcranMessagerie({ conversationOuverte, onOuvrirConversation, onRetour }
           <button onClick={() => onOuvrirConversation(null)} className="w-9 h-9 rounded-full bg-[#254539] flex items-center justify-center">
             <ArrowLeft className="w-4 h-4 text-[#FAF6EF]" strokeWidth={2.5} />
           </button>
-          <p className="text-[#FAF6EF] font-bold text-[14px]">{conversationOuverte.annonces?.titre || "Conversation"}</p>
+          <p className="flex-1 text-[#FAF6EF] font-bold text-[14px] truncate">{conversationOuverte.annonces?.titre || "Conversation"}</p>
+          {!avisEnvoye && (
+            <button onClick={() => setAvisOuvert(!avisOuvert)} className="text-[11px] font-bold text-[#E8A93E]">
+              Laisser un avis
+            </button>
+          )}
         </header>
+
+        {avisOuvert && (
+          <div className="mx-4 mt-3 bg-white rounded-2xl p-4 border border-[#EFE9DB] shrink-0">
+            <p className="text-[12px] font-bold text-[#232323] mb-2">Note ton échange</p>
+            <div className="flex gap-1 mb-3">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button key={n} onClick={() => setNoteAvis(n)}>
+                  <Star className={`w-6 h-6 ${n <= noteAvis ? "fill-[#E8A93E] text-[#E8A93E]" : "text-[#E0DCCC]"}`} />
+                </button>
+              ))}
+            </div>
+            <textarea value={commentaireAvis} onChange={(e) => setCommentaireAvis(e.target.value)} placeholder="Un commentaire (optionnel)" rows={2} className="w-full bg-[#F0EFE6] rounded-xl px-3 py-2 text-[13px] outline-none resize-none mb-2" />
+            <button onClick={soumettreAvis} className="w-full bg-[#B5541F] text-[#FAF6EF] font-bold text-[13px] py-2.5 rounded-xl">
+              Envoyer l'avis
+            </button>
+          </div>
+        )}
         <div className="flex-1 overflow-y-auto px-4 pt-4 pb-4 space-y-3">
           {messages.map((m) => (
             <div key={m.id} className={`flex ${m.expediteur_id === conversationOuverte.acheteur_id ? "justify-end" : "justify-start"}`}>
@@ -688,9 +726,14 @@ function EcranProfil({ utilisateur, onDeconnexion }) {
 function EcranMesAnnonces({ onRetour }) {
   const [annonces, setAnnonces] = useState([]);
 
-  useEffect(() => {
-    recupererMesAnnonces().then(({ data }) => setAnnonces(data || []));
-  }, []);
+  const charger = () => recupererMesAnnonces().then(({ data }) => setAnnonces(data || []));
+
+  useEffect(() => { charger(); }, []);
+
+  const marquer = async (id) => {
+    await marquerVendu(id);
+    charger();
+  };
 
   return (
     <>
@@ -703,13 +746,22 @@ function EcranMesAnnonces({ onRetour }) {
       <div className="flex-1 overflow-y-auto px-5 pt-4 pb-24 space-y-3">
         {annonces.map((a) => (
           <div key={a.id} className="bg-white rounded-2xl p-3 border border-[#EFE9DB] flex gap-3">
+            <img src={a.photos?.[0] || "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=200&q=80"} className="w-16 h-16 rounded-xl object-cover shrink-0" alt="" />
             <div className="flex-1">
-              <p className="font-bold text-[#232323] text-[13px]">{a.titre}</p>
+              <div className="flex items-center gap-1.5">
+                <p className="font-bold text-[#232323] text-[13px]">{a.titre}</p>
+                {a.statut === "vendu" && <CheckCircle2 className="w-3.5 h-3.5 text-[#4FBF8A]" strokeWidth={2.5} />}
+              </div>
               <p className="text-[#B5541F] font-extrabold text-[14px]">{a.prix}</p>
               <div className="flex items-center gap-3 mt-1">
                 <span className="text-[11px] text-[#5C7268]">{a.nb_vues} vues</span>
                 <span className="text-[11px] text-[#5C7268]">{a.nb_contacts} contacts</span>
               </div>
+              {a.statut === "active" && (
+                <button onClick={() => marquer(a.id)} className="mt-2 text-[11px] font-bold text-[#B5541F] bg-[#F5E4D5] px-3 py-1.5 rounded-full">
+                  Marquer comme vendu
+                </button>
+              )}
             </div>
           </div>
         ))}
