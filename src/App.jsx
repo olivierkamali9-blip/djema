@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { Search, SlidersHorizontal, Heart, MessageCircle, MapPin, Home, PlusCircle, User, Inbox, ArrowLeft, Phone, Mail, ArrowRight, Star, ShieldCheck, Eye, Send } from "lucide-react";
+import { Search, SlidersHorizontal, Heart, MessageCircle, MapPin, Home, PlusCircle, User, Inbox, ArrowLeft, Phone, Mail, ArrowRight, Star, ShieldCheck, Eye, Send, Camera, X, Settings, Grid3x3, MessageSquareText, CheckCircle2 } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
 import {
   inscriptionParEmail, connexionParEmail, deconnexion, utilisateurActuel,
   recupererAnnonces, recupererAnnonce, publierAnnonce, recupererMesAnnonces,
   enregistrerVue, demarrerConversation, recupererConversations, envoyerMessage,
   recupererMessages, ecouterNouveauxMessages, recupererCategories,
+  recupererProfil, mettreAJourProfil, envoyerPhoto, marquerVendu,
 } from "./lib/djemaApi";
 
 // ============================================
@@ -317,21 +318,62 @@ function EcranDetail({ annonce, utilisateur, onRetour, onOuvrirMessagerie }) {
 }
 
 // ---------- PUBLIER ----------
+const ETATS = ["Neuf", "Très bon état", "Usé", "Très abîmé"];
+
 function EcranPublier({ utilisateur, onPublie, onRetour }) {
   const [titre, setTitre] = useState("");
   const [description, setDescription] = useState("");
   const [prix, setPrix] = useState("");
   const [quartier, setQuartier] = useState("");
   const [categorieId, setCategorieId] = useState(null);
+  const [sousCategorieId, setSousCategorieId] = useState(null);
+  const [etat, setEtat] = useState("Très bon état");
   const [categories, setCategories] = useState([]);
+  const [photos, setPhotos] = useState([]);
+  const [envoiEnCours, setEnvoiEnCours] = useState(false);
+  const [erreur, setErreur] = useState("");
 
   useEffect(() => {
     recupererCategories().then(({ data }) => setCategories(data || []));
   }, []);
 
+  const categoriesPrincipales = categories.filter((c) => !c.categorie_parent_id);
+  const categorieChoisie = categoriesPrincipales.find((c) => c.id === categorieId);
+  const sousCategoriesDisponibles = categorieChoisie
+    ? categories.filter((c) => c.categorie_parent_id === categorieChoisie.id)
+    : [];
+  const isVente = categorieChoisie?.nom === "Vente";
+  const isEmploi = categorieChoisie?.nom === "Emploi";
+
+  const choisirPhotos = async (e) => {
+    const fichiers = Array.from(e.target.files).slice(0, 5 - photos.length);
+    setEnvoiEnCours(true);
+    for (const fichier of fichiers) {
+      const { url, error } = await envoyerPhoto(fichier, "annonces");
+      if (!error) setPhotos((prev) => [...prev, url]);
+    }
+    setEnvoiEnCours(false);
+  };
+
+  const retirerPhoto = (index) => {
+    setPhotos((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const publier = async () => {
-    if (!titre || !prix || !quartier) return;
-    await publierAnnonce({ titre, description, prix, quartier, categorie_id: categorieId, statut: "active" });
+    setErreur("");
+    if (!titre || !prix || !quartier || !categorieId) {
+      setErreur("Merci de remplir au moins le titre, le prix, la catégorie et le quartier.");
+      return;
+    }
+    const { error } = await publierAnnonce({
+      titre, description, prix, quartier,
+      categorie_id: categorieId,
+      sous_categorie_id: sousCategorieId,
+      etat_produit: isVente ? etat : null,
+      photos,
+      statut: "active",
+    });
+    if (error) return setErreur(error.message || "Une erreur est survenue");
     onPublie();
   };
 
@@ -344,20 +386,78 @@ function EcranPublier({ utilisateur, onPublie, onRetour }) {
         <h1 className="text-[#FAF6EF] font-bold text-base">Publier une annonce</h1>
       </header>
       <div className="flex-1 overflow-y-auto px-5 pt-5 pb-28 space-y-4">
+        {/* Catégorie */}
+        <label className="text-[12px] font-bold text-[#5C7268] uppercase tracking-wide">Catégorie</label>
         <div className="flex gap-2 overflow-x-auto no-scrollbar">
-          {categories.filter((c) => !c.categorie_parent_id).map((c) => (
-            <button key={c.id} onClick={() => setCategorieId(c.id)} className={`shrink-0 px-4 py-2 rounded-full text-[13px] font-bold ${categorieId === c.id ? "bg-[#B5541F] text-[#FAF6EF]" : "bg-white border border-[#EFE9DB] text-[#5C7268]"}`}>
+          {categoriesPrincipales.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => { setCategorieId(c.id); setSousCategorieId(null); }}
+              className={`shrink-0 px-4 py-2 rounded-full text-[13px] font-bold ${categorieId === c.id ? "bg-[#B5541F] text-[#FAF6EF]" : "bg-white border border-[#EFE9DB] text-[#5C7268]"}`}
+            >
               {c.nom}
             </button>
           ))}
         </div>
-        <input value={titre} onChange={(e) => setTitre(e.target.value)} placeholder="Titre de l'annonce" className="w-full bg-white border border-[#EFE9DB] rounded-xl px-4 py-3 text-[14px] outline-none" />
+
+        {/* Photos */}
+        <label className="text-[12px] font-bold text-[#5C7268] uppercase tracking-wide block">Photos (5 max)</label>
+        <div className="flex gap-2 flex-wrap">
+          {photos.map((url, i) => (
+            <div key={i} className="relative w-20 h-20 rounded-2xl overflow-hidden shrink-0">
+              <img src={url} className="w-full h-full object-cover" alt="" />
+              <button onClick={() => retirerPhoto(i)} className="absolute top-1 right-1 w-5 h-5 bg-black/50 rounded-full flex items-center justify-center">
+                <X className="w-3 h-3 text-white" strokeWidth={3} />
+              </button>
+            </div>
+          ))}
+          {photos.length < 5 && (
+            <label className="w-20 h-20 rounded-2xl border-2 border-dashed border-[#C9BFA8] flex flex-col items-center justify-center gap-1 shrink-0 cursor-pointer">
+              <input type="file" accept="image/*" multiple className="hidden" onChange={choisirPhotos} />
+              <Camera className="w-5 h-5 text-[#B5541F]" strokeWidth={2} />
+              <span className="text-[10px] font-semibold text-[#8A9A91]">{envoiEnCours ? "Envoi..." : "Ajouter"}</span>
+            </label>
+          )}
+        </div>
+
+        {/* Sous-catégorie */}
+        {sousCategoriesDisponibles.length > 0 && (
+          <>
+            <label className="text-[12px] font-bold text-[#5C7268] uppercase tracking-wide block">Sous-catégorie</label>
+            <div className="flex gap-2 flex-wrap">
+              {sousCategoriesDisponibles.map((s) => (
+                <button key={s.id} onClick={() => setSousCategorieId(s.id)} className={`px-3.5 py-2 rounded-full text-[12px] font-bold ${sousCategorieId === s.id ? "bg-[#1B3B2F] text-[#FAF6EF]" : "bg-white border border-[#EFE9DB] text-[#5C7268]"}`}>
+                  {s.nom}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        <input value={titre} onChange={(e) => setTitre(e.target.value)} placeholder={isEmploi ? "Ex: Électricien recherché" : "Titre de l'annonce"} className="w-full bg-white border border-[#EFE9DB] rounded-xl px-4 py-3 text-[14px] outline-none" />
         <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} placeholder="Description" className="w-full bg-white border border-[#EFE9DB] rounded-xl px-4 py-3 text-[14px] outline-none resize-none" />
-        <input value={prix} onChange={(e) => setPrix(e.target.value)} placeholder="Prix" className="w-full bg-white border border-[#EFE9DB] rounded-xl px-4 py-3 text-[14px] outline-none" />
+
+        {/* État du produit - seulement Vente */}
+        {isVente && (
+          <>
+            <label className="text-[12px] font-bold text-[#5C7268] uppercase tracking-wide block">État du produit</label>
+            <div className="flex gap-2 flex-wrap">
+              {ETATS.map((e) => (
+                <button key={e} onClick={() => setEtat(e)} className={`px-3.5 py-2 rounded-full text-[12px] font-bold ${etat === e ? "bg-[#1B3B2F] text-[#FAF6EF]" : "bg-white border border-[#EFE9DB] text-[#5C7268]"}`}>
+                  {e}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        <input value={prix} onChange={(e) => setPrix(e.target.value)} placeholder={isEmploi ? "Salaire / rémunération" : "Prix"} className="w-full bg-white border border-[#EFE9DB] rounded-xl px-4 py-3 text-[14px] outline-none" />
         <input value={quartier} onChange={(e) => setQuartier(e.target.value)} placeholder="Quartier / Commune" className="w-full bg-white border border-[#EFE9DB] rounded-xl px-4 py-3 text-[14px] outline-none" />
+
+        {erreur && <p className="text-[#B5541F] text-[13px] font-semibold">{erreur}</p>}
       </div>
       <div className="absolute bottom-0 left-0 right-0 bg-white border-t border-[#EFE9DB] px-5 pt-3 pb-6">
-        <button onClick={publier} className="w-full bg-[#B5541F] text-[#FAF6EF] font-bold text-[15px] py-3.5 rounded-full">
+        <button onClick={publier} className="w-full bg-[#B5541F] text-[#FAF6EF] font-bold text-[15px] py-3.5 rounded-full active:scale-95 transition-transform">
           Publier l'annonce
         </button>
       </div>
@@ -444,22 +544,141 @@ function EcranMessagerie({ conversationOuverte, onOuvrirConversation, onRetour }
 
 // ---------- PROFIL ----------
 function EcranProfil({ utilisateur, onDeconnexion }) {
+  const [profil, setProfil] = useState(null);
+  const [modeEdition, setModeEdition] = useState(false);
+  const [nom, setNom] = useState("");
+  const [ville, setVille] = useState("");
+  const [quartier, setQuartier] = useState("");
+  const [ongletActif, setOngletActif] = useState("annonces");
+  const [mesAnnonces, setMesAnnonces] = useState([]);
+  const [envoiPhoto, setEnvoiPhoto] = useState(false);
+
+  const chargerProfil = () => {
+    recupererProfil(utilisateur.id).then(({ data }) => {
+      if (data) {
+        setProfil(data);
+        setNom(data.nom || "");
+        setVille(data.ville || "");
+        setQuartier(data.quartier || "");
+      }
+    });
+  };
+
+  useEffect(() => {
+    chargerProfil();
+    recupererMesAnnonces().then(({ data }) => setMesAnnonces(data || []));
+  }, []);
+
+  const sauvegarder = async () => {
+    await mettreAJourProfil({ nom, ville, quartier });
+    setModeEdition(false);
+    chargerProfil();
+  };
+
+  const changerPhoto = async (e) => {
+    const fichier = e.target.files[0];
+    if (!fichier) return;
+    setEnvoiPhoto(true);
+    const { url, error } = await envoyerPhoto(fichier, "avatars");
+    if (!error) {
+      await mettreAJourProfil({ photo_url: url });
+      chargerProfil();
+    }
+    setEnvoiPhoto(false);
+  };
+
+  if (!profil) {
+    return <div className="flex-1 flex items-center justify-center"><p className="text-[#8A9A91] text-[13px]">Chargement...</p></div>;
+  }
+
   return (
     <>
       <header className="bg-[#1B3B2F] px-5 pt-10 pb-6 shrink-0">
-        <div className="flex items-center gap-4">
-          <div className="w-20 h-20 rounded-full bg-[#E8A93E] flex items-center justify-center shrink-0 border-4 border-[#254539]">
-            <span className="text-2xl font-black text-[#1B3B2F]">{(utilisateur.email || "U").charAt(0).toUpperCase()}</span>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-4">
+            <label className="relative w-20 h-20 rounded-full bg-[#E8A93E] flex items-center justify-center shrink-0 border-4 border-[#254539] cursor-pointer overflow-hidden">
+              {profil.photo_url ? (
+                <img src={profil.photo_url} className="w-full h-full object-cover" alt="" />
+              ) : (
+                <span className="text-2xl font-black text-[#1B3B2F]">{(profil.nom || "U").charAt(0).toUpperCase()}</span>
+              )}
+              <input type="file" accept="image/*" className="hidden" onChange={changerPhoto} />
+              <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                <Camera className="w-5 h-5 text-white" strokeWidth={2.5} />
+              </div>
+            </label>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <h1 className="text-[#FAF6EF] font-black text-lg truncate">{profil.nom}</h1>
+                {profil.telephone_verifie && <ShieldCheck className="w-4 h-4 text-[#4FBF8A] shrink-0" strokeWidth={2.5} />}
+              </div>
+              <div className="flex items-center gap-1 mt-1">
+                <Star className="w-3.5 h-3.5 fill-[#E8A93E] text-[#E8A93E]" />
+                <span className="text-[13px] font-bold text-[#FAF6EF]">{profil.note_moyenne || 0}</span>
+                <span className="text-[13px] text-[#9BB0A5]">({profil.nb_avis || 0} avis)</span>
+              </div>
+              <div className="flex items-center gap-1 mt-1 text-[#9BB0A5]">
+                <MapPin className="w-3 h-3" strokeWidth={2.5} />
+                <span className="text-[12px]">{profil.quartier}, {profil.ville}</span>
+              </div>
+            </div>
           </div>
-          <div>
-            <h1 className="text-[#FAF6EF] font-black text-lg">{utilisateur.email}</h1>
-          </div>
+          <button onClick={() => setModeEdition(!modeEdition)} className="w-9 h-9 rounded-full bg-[#254539] flex items-center justify-center shrink-0">
+            <Settings className="w-4 h-4 text-[#FAF6EF]" strokeWidth={2.5} />
+          </button>
         </div>
+
+        {modeEdition && (
+          <div className="space-y-2.5 bg-[#254539] rounded-2xl p-4">
+            <input value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Nom" className="w-full bg-[#1B3B2F] rounded-xl px-3.5 py-2.5 text-[13px] text-[#FAF6EF] placeholder:text-[#7A9186] outline-none" />
+            <input value={ville} onChange={(e) => setVille(e.target.value)} placeholder="Ville" className="w-full bg-[#1B3B2F] rounded-xl px-3.5 py-2.5 text-[13px] text-[#FAF6EF] placeholder:text-[#7A9186] outline-none" />
+            <input value={quartier} onChange={(e) => setQuartier(e.target.value)} placeholder="Quartier" className="w-full bg-[#1B3B2F] rounded-xl px-3.5 py-2.5 text-[13px] text-[#FAF6EF] placeholder:text-[#7A9186] outline-none" />
+            <button onClick={sauvegarder} className="w-full bg-[#E8A93E] text-[#1B3B2F] font-bold text-[13px] py-2.5 rounded-xl">
+              Enregistrer
+            </button>
+          </div>
+        )}
       </header>
-      <div className="flex-1 overflow-y-auto p-5">
-        <button onClick={onDeconnexion} className="w-full bg-white border border-[#EFE9DB] rounded-2xl py-3.5 text-[#B5541F] font-bold text-[14px]">
-          Se déconnecter
+
+      <div className="flex border-b border-[#EFE9DB] shrink-0 bg-white">
+        <button onClick={() => setOngletActif("annonces")} className={`flex-1 flex items-center justify-center gap-1.5 py-3.5 border-b-2 ${ongletActif === "annonces" ? "border-[#B5541F]" : "border-transparent"}`}>
+          <Grid3x3 className={`w-4 h-4 ${ongletActif === "annonces" ? "text-[#B5541F]" : "text-[#B0BAB4]"}`} strokeWidth={2.5} />
+          <span className={`text-[13px] font-bold ${ongletActif === "annonces" ? "text-[#B5541F]" : "text-[#B0BAB4]"}`}>Annonces ({mesAnnonces.length})</span>
         </button>
+        <button onClick={() => setOngletActif("avis")} className={`flex-1 flex items-center justify-center gap-1.5 py-3.5 border-b-2 ${ongletActif === "avis" ? "border-[#B5541F]" : "border-transparent"}`}>
+          <MessageSquareText className={`w-4 h-4 ${ongletActif === "avis" ? "text-[#B5541F]" : "text-[#B0BAB4]"}`} strokeWidth={2.5} />
+          <span className={`text-[13px] font-bold ${ongletActif === "avis" ? "text-[#B5541F]" : "text-[#B0BAB4]"}`}>Avis ({profil.nb_avis || 0})</span>
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto pb-6">
+        {ongletActif === "annonces" && (
+          <div className="grid grid-cols-2 gap-3 p-4">
+            {mesAnnonces.length === 0 && <p className="col-span-2 text-center text-[#8A9A91] text-[13px] pt-6">Aucune annonce publiée pour l'instant</p>}
+            {mesAnnonces.map((a) => (
+              <div key={a.id} className="bg-white rounded-2xl overflow-hidden border border-[#EFE9DB]">
+                <img src={a.photos?.[0] || "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=300&q=80"} alt={a.titre} className="w-full h-28 object-cover" />
+                <div className="p-2.5">
+                  <p className="text-[12px] font-semibold text-[#232323] truncate">{a.titre}</p>
+                  <p className="text-[13px] font-extrabold text-[#B5541F] mt-0.5">{a.prix}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {ongletActif === "avis" && (
+          <div className="p-4">
+            <p className="text-center text-[#8A9A91] text-[13px] pt-6">
+              {profil.nb_avis > 0 ? "Chargement des avis..." : "Pas encore d'avis reçus"}
+            </p>
+          </div>
+        )}
+
+        <div className="px-4 mt-4">
+          <button onClick={onDeconnexion} className="w-full bg-white border border-[#EFE9DB] rounded-2xl py-3.5 text-[#B5541F] font-bold text-[14px]">
+            Se déconnecter
+          </button>
+        </div>
       </div>
     </>
   );

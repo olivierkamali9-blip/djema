@@ -55,6 +55,29 @@ export async function utilisateurActuel() {
   return data.user;
 }
 
+// Récupérer le profil complet d'un utilisateur (le sien ou celui d'un autre)
+export async function recupererProfil(utilisateurId) {
+  return await supabase.from("utilisateurs").select("*").eq("id", utilisateurId).single();
+}
+
+// Mettre à jour son propre profil
+export async function mettreAJourProfil(champs) {
+  const utilisateur = await utilisateurActuel();
+  if (!utilisateur) return { error: "Non connecté" };
+  return await supabase.from("utilisateurs").update(champs).eq("id", utilisateur.id);
+}
+
+// ---------- STOCKAGE (photos) ----------
+
+// Envoyer une photo vers le stockage Djema, retourne son URL publique
+export async function envoyerPhoto(fichier, dossier = "annonces") {
+  const nomFichier = `${dossier}/${Date.now()}-${Math.random().toString(36).slice(2)}.${fichier.name.split(".").pop()}`;
+  const { error } = await supabase.storage.from("djema-photos").upload(nomFichier, fichier);
+  if (error) return { error };
+  const { data } = supabase.storage.from("djema-photos").getPublicUrl(nomFichier);
+  return { url: data.publicUrl };
+}
+
 // ---------- ANNONCES ----------
 
 // Récupérer le flux d'annonces actives (avec infos du vendeur)
