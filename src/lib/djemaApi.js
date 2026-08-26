@@ -9,7 +9,7 @@ import { supabase } from "./supabaseClient";
 // ---------- AUTHENTIFICATION ----------
 
 // Inscription par email + mot de passe
-export async function inscriptionParEmail(email, motDePasse, nom, quartier) {
+export async function inscriptionParEmail(email, motDePasse, nom, quartier, ville) {
   const { data, error } = await supabase.auth.signUp({ email, password: motDePasse });
   if (error) return { error };
 
@@ -19,6 +19,7 @@ export async function inscriptionParEmail(email, motDePasse, nom, quartier) {
     nom,
     email,
     quartier,
+    ville,
   });
   return { data, error: erreurProfil };
 }

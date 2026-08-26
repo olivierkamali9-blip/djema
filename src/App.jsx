@@ -93,13 +93,14 @@ function EcranAuth({ onConnecte }) {
   const [motDePasse, setMotDePasse] = useState("");
   const [nom, setNom] = useState("");
   const [quartier, setQuartier] = useState("");
+  const [ville, setVille] = useState("Bunia");
   const [erreur, setErreur] = useState("");
   const [inscription, setInscription] = useState(false);
 
   const soumettre = async () => {
     setErreur("");
     if (inscription) {
-      const { data, error } = await inscriptionParEmail(email, motDePasse, nom, quartier);
+      const { data, error } = await inscriptionParEmail(email, motDePasse, nom, quartier, ville);
       if (error) return setErreur(error.message);
       onConnecte(data.user);
     } else {
@@ -147,7 +148,8 @@ function EcranAuth({ onConnecte }) {
               {inscription && (
                 <>
                   <input value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Ton nom" className="w-full bg-[#254539] rounded-2xl px-4 py-4 text-[#FAF6EF] placeholder:text-[#7A9186] outline-none text-[15px]" />
-                  <input value={quartier} onChange={(e) => setQuartier(e.target.value)} placeholder="Ton quartier à Bunia" className="w-full bg-[#254539] rounded-2xl px-4 py-4 text-[#FAF6EF] placeholder:text-[#7A9186] outline-none text-[15px]" />
+                  <input value={ville} onChange={(e) => setVille(e.target.value)} placeholder="Ta ville" className="w-full bg-[#254539] rounded-2xl px-4 py-4 text-[#FAF6EF] placeholder:text-[#7A9186] outline-none text-[15px]" />
+                  <input value={quartier} onChange={(e) => setQuartier(e.target.value)} placeholder="Ton quartier" className="w-full bg-[#254539] rounded-2xl px-4 py-4 text-[#FAF6EF] placeholder:text-[#7A9186] outline-none text-[15px]" />
                 </>
               )}
               <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Adresse email" className="w-full bg-[#254539] rounded-2xl px-4 py-4 text-[#FAF6EF] placeholder:text-[#7A9186] outline-none text-[15px]" />
