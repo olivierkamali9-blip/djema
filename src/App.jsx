@@ -8,6 +8,7 @@ import {
   recupererMessages, ecouterNouveauxMessages, recupererCategories,
   recupererProfil, mettreAJourProfil, envoyerPhoto, marquerVendu, laisserAvis,
   modifierAnnonce, supprimerAnnonce, supprimerMessage, supprimerConversation, supprimerCompte,
+  envoyerCodeSMS, verifierCodeSMS,
 } from "./lib/djemaApi";
 
 // ============================================
@@ -132,6 +133,12 @@ function EcranAuth({ onConnecte }) {
   const [erreur, setErreur] = useState("");
   const [inscription, setInscription] = useState(false);
 
+  // Flux téléphone
+  const [telephone, setTelephone] = useState("");
+  const [codeSMS, setCodeSMS] = useState("");
+  const [etapeTelephone, setEtapeTelephone] = useState(1); // 1 = saisir numéro, 2 = saisir code, 3 = compléter profil
+  const [utilisateurVerifie, setUtilisateurVerifie] = useState(null);
+
   const soumettre = async () => {
     setErreur("");
     if (inscription) {
@@ -143,6 +150,42 @@ function EcranAuth({ onConnecte }) {
       if (error) return setErreur(error.message);
       onConnecte(data.user);
     }
+  };
+
+  const envoyerSMS = async () => {
+    setErreur("");
+    const numeroComplet = telephone.startsWith("+") ? telephone : `+243${telephone.replace(/^0/, "")}`;
+    const { error } = await envoyerCodeSMS(numeroComplet);
+    if (error) return setErreur(error.message);
+    setTelephone(numeroComplet);
+    setEtapeTelephone(2);
+  };
+
+  const verifierSMS = async () => {
+    setErreur("");
+    const { data, error } = await verifierCodeSMS(telephone, codeSMS);
+    if (error) return setErreur(error.message);
+    setUtilisateurVerifie(data.user);
+    const { data: profilExistant } = await recupererProfil(data.user.id);
+    if (profilExistant) {
+      onConnecte(data.user);
+    } else {
+      setEtapeTelephone(3);
+    }
+  };
+
+  const finaliserProfilTelephone = async () => {
+    setErreur("");
+    const { error } = await supabase.from("utilisateurs").insert({
+      id: utilisateurVerifie.id,
+      nom,
+      telephone,
+      telephone_verifie: true,
+      quartier,
+      ville,
+    });
+    if (error) return setErreur(error.message);
+    onConnecte(utilisateurVerifie);
   };
 
   return (
@@ -160,14 +203,68 @@ function EcranAuth({ onConnecte }) {
               </p>
             </div>
             <div className="space-y-3">
-              <button onClick={() => setMode("email")} className="w-full flex items-center justify-center gap-2.5 bg-[#E8A93E] text-[#1B3B2F] font-bold text-[15px] py-4 rounded-full active:scale-95 transition-transform">
+              <button onClick={() => setMode("telephone")} className="w-full flex items-center justify-center gap-2.5 bg-[#E8A93E] text-[#1B3B2F] font-bold text-[15px] py-4 rounded-full active:scale-95 transition-transform">
+                <Phone className="w-4 h-4" strokeWidth={2.5} />
+                Continuer avec mon numéro
+              </button>
+              <button onClick={() => setMode("email")} className="w-full flex items-center justify-center gap-2.5 bg-[#254539] text-[#FAF6EF] font-bold text-[15px] py-4 rounded-full active:scale-95 transition-transform">
                 <Mail className="w-4 h-4" strokeWidth={2.5} />
                 Continuer avec mon email
               </button>
-              <p className="text-center text-[11px] text-[#7A9186] mt-2 px-4 leading-relaxed">
-                La connexion par téléphone (SMS) sera activée dès que le service SMS de Supabase sera configuré sur ton projet.
-              </p>
             </div>
+          </div>
+        )}
+
+        {mode === "telephone" && etapeTelephone === 1 && (
+          <div className="flex-1 flex flex-col px-7 pt-16 pb-10">
+            <button onClick={() => setMode("choix")} className="w-9 h-9 rounded-full bg-[#254539] flex items-center justify-center mb-8">
+              <ArrowLeft className="w-4 h-4 text-[#FAF6EF]" strokeWidth={2.5} />
+            </button>
+            <h1 className="text-2xl font-black text-[#FAF6EF] leading-tight">Ton numéro de téléphone</h1>
+            <p className="text-[#9BB0A5] text-[14px] mt-2 mb-8">On va t'envoyer un code par SMS</p>
+            <div className="flex items-center gap-2 bg-[#254539] rounded-2xl px-4 py-4">
+              <span className="text-[#E8A93E] font-bold text-[15px]">🇨🇩 +243</span>
+              <div className="w-px h-5 bg-[#3A5C4E]" />
+              <input value={telephone} onChange={(e) => setTelephone(e.target.value)} placeholder="99 123 4567" className="flex-1 bg-transparent text-[#FAF6EF] placeholder:text-[#7A9186] outline-none text-[15px] font-medium" />
+            </div>
+            {erreur && <p className="text-[#E8A93E] text-[13px] mt-3">{erreur}</p>}
+            <button onClick={envoyerSMS} className="mt-auto w-full flex items-center justify-center gap-2 bg-[#E8A93E] text-[#1B3B2F] font-bold text-[15px] py-4 rounded-full active:scale-95 transition-transform">
+              Recevoir le code
+              <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
+            </button>
+          </div>
+        )}
+
+        {mode === "telephone" && etapeTelephone === 2 && (
+          <div className="flex-1 flex flex-col px-7 pt-16 pb-10">
+            <button onClick={() => setEtapeTelephone(1)} className="w-9 h-9 rounded-full bg-[#254539] flex items-center justify-center mb-8">
+              <ArrowLeft className="w-4 h-4 text-[#FAF6EF]" strokeWidth={2.5} />
+            </button>
+            <h1 className="text-2xl font-black text-[#FAF6EF] leading-tight">Code de vérification</h1>
+            <p className="text-[#9BB0A5] text-[14px] mt-2 mb-8">Envoyé au {telephone}</p>
+            <input value={codeSMS} onChange={(e) => setCodeSMS(e.target.value)} placeholder="123456" className="w-full bg-[#254539] rounded-2xl px-4 py-4 text-center text-2xl tracking-[0.3em] text-[#FAF6EF] placeholder:text-[#7A9186] outline-none" />
+            {erreur && <p className="text-[#E8A93E] text-[13px] mt-3">{erreur}</p>}
+            <button onClick={verifierSMS} className="mt-auto w-full flex items-center justify-center gap-2 bg-[#E8A93E] text-[#1B3B2F] font-bold text-[15px] py-4 rounded-full active:scale-95 transition-transform">
+              Vérifier
+              <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
+            </button>
+          </div>
+        )}
+
+        {mode === "telephone" && etapeTelephone === 3 && (
+          <div className="flex-1 flex flex-col px-7 pt-16 pb-10">
+            <h1 className="text-2xl font-black text-[#FAF6EF] leading-tight">Presque fini !</h1>
+            <p className="text-[#9BB0A5] text-[14px] mt-2 mb-8">Complète ton profil pour commencer</p>
+            <div className="space-y-3">
+              <input value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Ton nom" className="w-full bg-[#254539] rounded-2xl px-4 py-4 text-[#FAF6EF] placeholder:text-[#7A9186] outline-none text-[15px]" />
+              <input value={ville} onChange={(e) => setVille(e.target.value)} placeholder="Ta ville" className="w-full bg-[#254539] rounded-2xl px-4 py-4 text-[#FAF6EF] placeholder:text-[#7A9186] outline-none text-[15px]" />
+              <input value={quartier} onChange={(e) => setQuartier(e.target.value)} placeholder="Ton quartier" className="w-full bg-[#254539] rounded-2xl px-4 py-4 text-[#FAF6EF] placeholder:text-[#7A9186] outline-none text-[15px]" />
+            </div>
+            {erreur && <p className="text-[#E8A93E] text-[13px] mt-3">{erreur}</p>}
+            <button onClick={finaliserProfilTelephone} className="mt-auto w-full flex items-center justify-center gap-2 bg-[#E8A93E] text-[#1B3B2F] font-bold text-[15px] py-4 rounded-full active:scale-95 transition-transform">
+              Terminer
+              <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
+            </button>
           </div>
         )}
 
