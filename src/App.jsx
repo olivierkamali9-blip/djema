@@ -36,6 +36,39 @@ export default function DjemaApp() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  // Demander la permission de notification et écouter les nouveaux messages globalement
+  useEffect(() => {
+    if (!utilisateur) return;
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+
+    const canal = supabase
+      .channel("messages-globaux")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        async (payload) => {
+          const m = payload.new;
+          if (m.expediteur_id === utilisateur.id) return; // pas de notif pour ses propres messages
+          const { data: conv } = await supabase
+            .from("conversations")
+            .select("acheteur_id, vendeur_id")
+            .eq("id", m.conversation_id)
+            .single();
+          if (!conv) return;
+          const concerne = conv.acheteur_id === utilisateur.id || conv.vendeur_id === utilisateur.id;
+          if (!concerne) return;
+          if ("Notification" in window && Notification.permission === "granted") {
+            new Notification("Nouveau message sur Djema", { body: m.contenu, icon: "/icon-192.png" });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(canal);
+  }, [utilisateur?.id]);
+
   if (chargement) {
     return (
       <div className="min-h-screen bg-[#1B3B2F] flex items-center justify-center">
