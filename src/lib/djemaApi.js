@@ -67,6 +67,17 @@ export async function mettreAJourProfil(champs) {
   return await supabase.from("utilisateurs").update(champs).eq("id", utilisateur.id);
 }
 
+// Supprimer son profil et toutes ses données (annonces, messages, avis)
+// Note : ceci supprime les données, la déconnexion suit juste après.
+// La suppression du compte de connexion lui-même nécessite une étape serveur séparée.
+export async function supprimerCompte() {
+  const utilisateur = await utilisateurActuel();
+  if (!utilisateur) return { error: "Non connecté" };
+  const { error } = await supabase.from("utilisateurs").delete().eq("id", utilisateur.id);
+  if (error) return { error };
+  return await supabase.auth.signOut();
+}
+
 // ---------- STOCKAGE (photos) ----------
 
 // Envoyer une photo vers le stockage Djema, retourne son URL publique
@@ -226,6 +237,24 @@ export function ecouterNouveauxMessages(conversationId, surNouveauMessage) {
       (payload) => surNouveauMessage(payload.new)
     )
     .subscribe();
+}
+
+// Supprimer un message (seulement le sien)
+export async function supprimerMessage(messageId) {
+  const utilisateur = await utilisateurActuel();
+  if (!utilisateur) return { error: "Non connecté" };
+  return await supabase.from("messages").delete().eq("id", messageId).eq("expediteur_id", utilisateur.id);
+}
+
+// Supprimer toute une conversation (et ses messages, en cascade)
+export async function supprimerConversation(conversationId) {
+  const utilisateur = await utilisateurActuel();
+  if (!utilisateur) return { error: "Non connecté" };
+  return await supabase
+    .from("conversations")
+    .delete()
+    .eq("id", conversationId)
+    .or(`acheteur_id.eq.${utilisateur.id},vendeur_id.eq.${utilisateur.id}`);
 }
 
 // ---------- AVIS ----------

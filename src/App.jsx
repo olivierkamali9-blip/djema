@@ -7,7 +7,7 @@ import {
   enregistrerVue, demarrerConversation, recupererConversations, envoyerMessage,
   recupererMessages, ecouterNouveauxMessages, recupererCategories,
   recupererProfil, mettreAJourProfil, envoyerPhoto, marquerVendu, laisserAvis,
-  modifierAnnonce, supprimerAnnonce,
+  modifierAnnonce, supprimerAnnonce, supprimerMessage, supprimerConversation, supprimerCompte,
 } from "./lib/djemaApi";
 
 // ============================================
@@ -80,7 +80,7 @@ export default function DjemaApp() {
         )}
         {ecran === "mesAnnonces" && <EcranMesAnnonces onRetour={() => setEcran("accueil")} />}
 
-        {["accueil", "messagerie", "profil"].includes(ecran) && (
+        {["accueil", "messagerie", "profil"].includes(ecran) && !(ecran === "messagerie" && conversationOuverte) && (
           <NavigationBas ecranActif={ecran} onNaviguer={setEcran} />
         )}
       </div>
@@ -553,9 +553,19 @@ function EcranMessagerie({ conversationOuverte, onOuvrirConversation, onRetour }
         )}
         <div className="flex-1 overflow-y-auto px-4 pt-4 pb-4 space-y-3">
           {messages.map((m) => (
-            <div key={m.id} className={`flex ${m.expediteur_id === conversationOuverte.acheteur_id ? "justify-end" : "justify-start"}`}>
-              <div className="max-w-[75%] px-4 py-2.5 rounded-2xl bg-white border border-[#EFE9DB]">
-                <p className="text-[14px] text-[#232323]">{m.contenu}</p>
+            <div key={m.id} className={`flex ${m.expediteur_id === conversationOuverte.acheteur_id ? "justify-end" : "justify-start"} group`}>
+              <div className="flex items-center gap-1.5">
+                {m.expediteur_id === conversationOuverte.acheteur_id && (
+                  <button
+                    onClick={async () => { await supprimerMessage(m.id); setMessages((prev) => prev.filter((x) => x.id !== m.id)); }}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X className="w-3.5 h-3.5 text-[#B0BAB4]" strokeWidth={2.5} />
+                  </button>
+                )}
+                <div className="max-w-[75%] px-4 py-2.5 rounded-2xl bg-white border border-[#EFE9DB]">
+                  <p className="text-[14px] text-[#232323]">{m.contenu}</p>
+                </div>
               </div>
             </div>
           ))}
@@ -578,15 +588,27 @@ function EcranMessagerie({ conversationOuverte, onOuvrirConversation, onRetour }
       <div className="flex-1 overflow-y-auto px-3 pt-3 pb-24">
         {conversations.length === 0 && <p className="text-center text-[#8A9A91] text-[13px] pt-10">Aucune conversation pour l'instant</p>}
         {conversations.map((c) => (
-          <button key={c.id} onClick={() => onOuvrirConversation(c)} className="w-full flex items-center gap-3 px-2 py-3 rounded-2xl text-left">
-            <div className="w-14 h-14 rounded-2xl bg-[#E8A93E] flex items-center justify-center shrink-0">
-              <span className="text-lg font-bold text-[#1B3B2F]">{(c.annonces?.titre || "?").charAt(0)}</span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-bold text-[#232323] text-[14px] truncate">{c.annonces?.titre}</p>
-              <p className="text-[12px] text-[#8A9A91] truncate">{c.annonces?.prix}</p>
-            </div>
-          </button>
+          <div key={c.id} className="w-full flex items-center gap-3 px-2 py-3 rounded-2xl">
+            <button onClick={() => onOuvrirConversation(c)} className="flex-1 flex items-center gap-3 text-left min-w-0">
+              <div className="w-14 h-14 rounded-2xl bg-[#E8A93E] flex items-center justify-center shrink-0">
+                <span className="text-lg font-bold text-[#1B3B2F]">{(c.annonces?.titre || "?").charAt(0)}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-[#232323] text-[14px] truncate">{c.annonces?.titre}</p>
+                <p className="text-[12px] text-[#8A9A91] truncate">{c.annonces?.prix}</p>
+              </div>
+            </button>
+            <button
+              onClick={async () => {
+                if (!confirm("Supprimer cette conversation ?")) return;
+                await supprimerConversation(c.id);
+                setConversations((prev) => prev.filter((x) => x.id !== c.id));
+              }}
+              className="shrink-0 p-1.5"
+            >
+              <X className="w-4 h-4 text-[#B0BAB4]" strokeWidth={2.5} />
+            </button>
+          </div>
         ))}
       </div>
     </>
@@ -731,9 +753,18 @@ function EcranProfil({ utilisateur, onDeconnexion }) {
           </div>
         )}
 
-        <div className="px-4 mt-4">
+        <div className="px-4 mt-4 space-y-2">
           <button onClick={onDeconnexion} className="w-full bg-white border border-[#EFE9DB] rounded-2xl py-3.5 text-[#B5541F] font-bold text-[14px]">
             Se déconnecter
+          </button>
+          <button
+            onClick={async () => {
+              if (!confirm("Supprimer définitivement ton profil et toutes tes données (annonces, messages, avis) ? Cette action est irréversible.")) return;
+              await supprimerCompte();
+            }}
+            className="w-full bg-transparent text-[#8A9A91] font-semibold text-[12px] py-2"
+          >
+            Supprimer mon compte
           </button>
         </div>
       </div>
