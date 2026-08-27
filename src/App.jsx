@@ -180,6 +180,10 @@ function EcranAccueil({ onOuvrirAnnonce, onNaviguer }) {
   const [categories, setCategories] = useState([]);
   const [categorieActive, setCategorieActive] = useState("Tout");
   const [chargement, setChargement] = useState(true);
+  const [recherche, setRecherche] = useState("");
+  const [filtresOuverts, setFiltresOuverts] = useState(false);
+  const [quartierFiltre, setQuartierFiltre] = useState("");
+  const [prixMax, setPrixMax] = useState("");
 
   useEffect(() => {
     recupererCategories().then(({ data }) => setCategories(data || []));
@@ -190,7 +194,11 @@ function EcranAccueil({ onOuvrirAnnonce, onNaviguer }) {
   }, []);
 
   const categorieActiveId = categories.find((c) => c.nom === categorieActive && !c.categorie_parent_id)?.id;
-  const filtrees = categorieActive === "Tout" ? annonces : annonces.filter((a) => a.categorie_id === categorieActiveId);
+  const filtrees = annonces
+    .filter((a) => categorieActive === "Tout" || a.categorie_id === categorieActiveId)
+    .filter((a) => !recherche || a.titre.toLowerCase().includes(recherche.toLowerCase()) || a.description?.toLowerCase().includes(recherche.toLowerCase()))
+    .filter((a) => !quartierFiltre || a.quartier.toLowerCase().includes(quartierFiltre.toLowerCase()))
+    .filter((a) => !prixMax || parseInt((a.prix || "0").replace(/\D/g, "")) <= parseInt(prixMax || "999999999"));
 
   return (
     <>
@@ -198,12 +206,25 @@ function EcranAccueil({ onOuvrirAnnonce, onNaviguer }) {
         <div className="flex items-center gap-3">
           <div className="flex-1 flex items-center gap-2 bg-[#254539] rounded-full px-4 py-2.5">
             <Search className="w-4 h-4 text-[#9BB0A5]" strokeWidth={2.5} />
-            <input placeholder="Chercher un produit, un service..." className="bg-transparent text-sm text-[#FAF6EF] placeholder:text-[#7A9186] outline-none flex-1 min-w-0" />
+            <input value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Chercher un produit, un service..." className="bg-transparent text-sm text-[#FAF6EF] placeholder:text-[#7A9186] outline-none flex-1 min-w-0" />
           </div>
-          <button className="w-10 h-10 rounded-full bg-[#B5541F] flex items-center justify-center shrink-0 active:scale-95 transition-transform">
-            <SlidersHorizontal className="w-4 h-4 text-[#FAF6EF]" strokeWidth={2.5} />
+          <button onClick={() => setFiltresOuverts(!filtresOuverts)} className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 active:scale-95 transition-transform ${filtresOuverts || quartierFiltre || prixMax ? "bg-[#E8A93E]" : "bg-[#B5541F]"}`}>
+            <SlidersHorizontal className="w-4 h-4 text-[#1B3B2F]" strokeWidth={2.5} />
           </button>
         </div>
+
+        {filtresOuverts && (
+          <div className="mt-3 bg-[#254539] rounded-2xl p-3.5 space-y-2.5">
+            <input value={quartierFiltre} onChange={(e) => setQuartierFiltre(e.target.value)} placeholder="Filtrer par quartier" className="w-full bg-[#1B3B2F] rounded-xl px-3.5 py-2.5 text-[13px] text-[#FAF6EF] placeholder:text-[#7A9186] outline-none" />
+            <input value={prixMax} onChange={(e) => setPrixMax(e.target.value)} placeholder="Prix maximum" className="w-full bg-[#1B3B2F] rounded-xl px-3.5 py-2.5 text-[13px] text-[#FAF6EF] placeholder:text-[#7A9186] outline-none" />
+            {(quartierFiltre || prixMax) && (
+              <button onClick={() => { setQuartierFiltre(""); setPrixMax(""); }} className="text-[12px] font-semibold text-[#E8A93E]">
+                Réinitialiser les filtres
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="flex gap-2 mt-3.5 overflow-x-auto no-scrollbar -mx-5 px-5">
           {CATEGORIES_LABELS.map((cat) => (
             <button key={cat} onClick={() => setCategorieActive(cat)} className={`shrink-0 px-4 py-1.5 rounded-full text-[13px] font-semibold tracking-wide transition-colors ${categorieActive === cat ? "bg-[#E8A93E] text-[#1B3B2F]" : "bg-[#254539] text-[#C9D6CE]"}`}>
@@ -216,7 +237,7 @@ function EcranAccueil({ onOuvrirAnnonce, onNaviguer }) {
       <div className="flex-1 overflow-y-auto px-4 pt-4 pb-24 space-y-4">
         {chargement && <p className="text-center text-[#8A9A91] text-[13px] pt-10">Chargement des annonces...</p>}
         {!chargement && filtrees.length === 0 && (
-          <p className="text-center text-[#8A9A91] text-[13px] pt-10">Aucune annonce pour l'instant — sois le premier à publier !</p>
+          <p className="text-center text-[#8A9A91] text-[13px] pt-10">Aucune annonce ne correspond — essaie d'élargir ta recherche.</p>
         )}
         {filtrees.map((a) => (
           <article key={a.id} onClick={() => onOuvrirAnnonce(a)} className="bg-white rounded-3xl overflow-hidden shadow-[0_2px_16px_rgba(27,59,47,0.08)] border border-[#EFE9DB] cursor-pointer">
