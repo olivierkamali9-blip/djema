@@ -84,7 +84,7 @@ export async function envoyerPhoto(fichier, dossier = "annonces") {
 export async function recupererAnnonces({ categorieId, quartier } = {}) {
   let requete = supabase
     .from("annonces")
-    .select("*, utilisateurs(nom, photo_url, note_moyenne, quartier)")
+    .select("*, utilisateurs!annonces_utilisateur_id_fkey(nom, photo_url, note_moyenne, quartier)")
     .eq("statut", "active")
     .order("date_publication", { ascending: false });
 
@@ -98,7 +98,7 @@ export async function recupererAnnonces({ categorieId, quartier } = {}) {
 export async function recupererAnnonce(annonceId) {
   return await supabase
     .from("annonces")
-    .select("*, utilisateurs(nom, photo_url, note_moyenne, nb_avis, quartier, telephone_verifie)")
+    .select("*, utilisateurs!annonces_utilisateur_id_fkey(nom, photo_url, note_moyenne, nb_avis, quartier, telephone_verifie)")
     .eq("id", annonceId)
     .single();
 }
@@ -112,6 +112,20 @@ export async function publierAnnonce(annonce) {
     ...annonce,
     utilisateur_id: utilisateur.id,
   });
+}
+
+// Modifier une annonce existante
+export async function modifierAnnonce(annonceId, champs) {
+  const utilisateur = await utilisateurActuel();
+  if (!utilisateur) return { error: "Non connecté" };
+  return await supabase.from("annonces").update(champs).eq("id", annonceId).eq("utilisateur_id", utilisateur.id);
+}
+
+// Supprimer une annonce
+export async function supprimerAnnonce(annonceId) {
+  const utilisateur = await utilisateurActuel();
+  if (!utilisateur) return { error: "Non connecté" };
+  return await supabase.from("annonces").delete().eq("id", annonceId).eq("utilisateur_id", utilisateur.id);
 }
 
 // Marquer une annonce comme vendue

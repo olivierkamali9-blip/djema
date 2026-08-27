@@ -7,6 +7,7 @@ import {
   enregistrerVue, demarrerConversation, recupererConversations, envoyerMessage,
   recupererMessages, ecouterNouveauxMessages, recupererCategories,
   recupererProfil, mettreAJourProfil, envoyerPhoto, marquerVendu, laisserAvis,
+  modifierAnnonce, supprimerAnnonce,
 } from "./lib/djemaApi";
 
 // ============================================
@@ -220,7 +221,13 @@ function EcranAccueil({ onOuvrirAnnonce, onNaviguer }) {
         {filtrees.map((a) => (
           <article key={a.id} onClick={() => onOuvrirAnnonce(a)} className="bg-white rounded-3xl overflow-hidden shadow-[0_2px_16px_rgba(27,59,47,0.08)] border border-[#EFE9DB] cursor-pointer">
             <div className="relative">
-              <img src={a.photos?.[0] || "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=800&q=80"} alt={a.titre} className="w-full h-52 object-cover" />
+              {a.photos?.[0] ? (
+                <img src={a.photos[0]} alt={a.titre} className="w-full h-52 object-cover" />
+              ) : (
+                <div className="w-full h-52 bg-[#F0EFE6] flex items-center justify-center">
+                  <Camera className="w-8 h-8 text-[#C9BFA8]" strokeWidth={1.5} />
+                </div>
+              )}
               <div className="absolute top-3 left-3 flex items-center gap-1 bg-[#1B3B2F]/85 backdrop-blur-sm rounded-full pl-2 pr-3 py-1">
                 <MapPin className="w-3 h-3 text-[#E8A93E]" strokeWidth={2.5} />
                 <span className="text-[11px] font-semibold text-[#FAF6EF]">{a.quartier}</span>
@@ -263,7 +270,13 @@ function EcranDetail({ annonce, utilisateur, onRetour, onOuvrirMessagerie }) {
   return (
     <>
       <div className="relative h-80 shrink-0 bg-[#1B3B2F]">
-        <img src={annonce.photos?.[0] || "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=800&q=80"} alt={annonce.titre} className="w-full h-full object-cover" />
+        {annonce.photos?.[0] ? (
+          <img src={annonce.photos[0]} alt={annonce.titre} className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <Camera className="w-10 h-10 text-[#4A6356]" strokeWidth={1.5} />
+          </div>
+        )}
         <button onClick={onRetour} className="absolute top-10 left-4 w-9 h-9 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center">
           <ArrowLeft className="w-4 h-4 text-white" strokeWidth={2.5} />
         </button>
@@ -695,7 +708,13 @@ function EcranProfil({ utilisateur, onDeconnexion }) {
             {mesAnnonces.length === 0 && <p className="col-span-2 text-center text-[#8A9A91] text-[13px] pt-6">Aucune annonce publiée pour l'instant</p>}
             {mesAnnonces.map((a) => (
               <div key={a.id} className="bg-white rounded-2xl overflow-hidden border border-[#EFE9DB]">
-                <img src={a.photos?.[0] || "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=300&q=80"} alt={a.titre} className="w-full h-28 object-cover" />
+                {a.photos?.[0] ? (
+                  <img src={a.photos[0]} alt={a.titre} className="w-full h-28 object-cover" />
+                ) : (
+                  <div className="w-full h-28 bg-[#F0EFE6] flex items-center justify-center">
+                    <Camera className="w-6 h-6 text-[#C9BFA8]" strokeWidth={1.5} />
+                  </div>
+                )}
                 <div className="p-2.5">
                   <p className="text-[12px] font-semibold text-[#232323] truncate">{a.titre}</p>
                   <p className="text-[13px] font-extrabold text-[#B5541F] mt-0.5">{a.prix}</p>
@@ -725,6 +744,10 @@ function EcranProfil({ utilisateur, onDeconnexion }) {
 // ---------- MES ANNONCES ----------
 function EcranMesAnnonces({ onRetour }) {
   const [annonces, setAnnonces] = useState([]);
+  const [enEdition, setEnEdition] = useState(null);
+  const [titreEdit, setTitreEdit] = useState("");
+  const [prixEdit, setPrixEdit] = useState("");
+  const [descriptionEdit, setDescriptionEdit] = useState("");
 
   const charger = () => recupererMesAnnonces().then(({ data }) => setAnnonces(data || []));
 
@@ -732,6 +755,25 @@ function EcranMesAnnonces({ onRetour }) {
 
   const marquer = async (id) => {
     await marquerVendu(id);
+    charger();
+  };
+
+  const supprimer = async (id) => {
+    if (!confirm("Supprimer définitivement cette annonce ?")) return;
+    await supprimerAnnonce(id);
+    charger();
+  };
+
+  const ouvrirEdition = (a) => {
+    setEnEdition(a.id);
+    setTitreEdit(a.titre);
+    setPrixEdit(a.prix);
+    setDescriptionEdit(a.description || "");
+  };
+
+  const sauvegarderEdition = async (id) => {
+    await modifierAnnonce(id, { titre: titreEdit, prix: prixEdit, description: descriptionEdit });
+    setEnEdition(null);
     charger();
   };
 
@@ -744,25 +786,55 @@ function EcranMesAnnonces({ onRetour }) {
         <h1 className="text-[#FAF6EF] font-bold text-base">Mes annonces</h1>
       </header>
       <div className="flex-1 overflow-y-auto px-5 pt-4 pb-24 space-y-3">
+        {annonces.length === 0 && <p className="text-center text-[#8A9A91] text-[13px] pt-10">Aucune annonce publiée pour l'instant</p>}
         {annonces.map((a) => (
-          <div key={a.id} className="bg-white rounded-2xl p-3 border border-[#EFE9DB] flex gap-3">
-            <img src={a.photos?.[0] || "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=200&q=80"} className="w-16 h-16 rounded-xl object-cover shrink-0" alt="" />
-            <div className="flex-1">
-              <div className="flex items-center gap-1.5">
-                <p className="font-bold text-[#232323] text-[13px]">{a.titre}</p>
-                {a.statut === "vendu" && <CheckCircle2 className="w-3.5 h-3.5 text-[#4FBF8A]" strokeWidth={2.5} />}
-              </div>
-              <p className="text-[#B5541F] font-extrabold text-[14px]">{a.prix}</p>
-              <div className="flex items-center gap-3 mt-1">
-                <span className="text-[11px] text-[#5C7268]">{a.nb_vues} vues</span>
-                <span className="text-[11px] text-[#5C7268]">{a.nb_contacts} contacts</span>
-              </div>
-              {a.statut === "active" && (
-                <button onClick={() => marquer(a.id)} className="mt-2 text-[11px] font-bold text-[#B5541F] bg-[#F5E4D5] px-3 py-1.5 rounded-full">
-                  Marquer comme vendu
-                </button>
+          <div key={a.id} className="bg-white rounded-2xl p-3 border border-[#EFE9DB]">
+            <div className="flex gap-3">
+              {a.photos?.[0] ? (
+                <img src={a.photos[0]} className="w-16 h-16 rounded-xl object-cover shrink-0" alt="" />
+              ) : (
+                <div className="w-16 h-16 rounded-xl bg-[#F0EFE6] flex items-center justify-center shrink-0">
+                  <Camera className="w-5 h-5 text-[#B0BAB4]" strokeWidth={2} />
+                </div>
               )}
+              <div className="flex-1">
+                <div className="flex items-center gap-1.5">
+                  <p className="font-bold text-[#232323] text-[13px]">{a.titre}</p>
+                  {a.statut === "vendu" && <CheckCircle2 className="w-3.5 h-3.5 text-[#4FBF8A]" strokeWidth={2.5} />}
+                </div>
+                <p className="text-[#B5541F] font-extrabold text-[14px]">{a.prix}</p>
+                <div className="flex items-center gap-3 mt-1">
+                  <span className="text-[11px] text-[#5C7268]">{a.nb_vues} vues</span>
+                  <span className="text-[11px] text-[#5C7268]">{a.nb_contacts} contacts</span>
+                </div>
+              </div>
             </div>
+
+            {enEdition === a.id ? (
+              <div className="mt-3 pt-3 border-t border-[#F0EFE6] space-y-2">
+                <input value={titreEdit} onChange={(e) => setTitreEdit(e.target.value)} className="w-full bg-[#F0EFE6] rounded-lg px-3 py-2 text-[13px] outline-none" placeholder="Titre" />
+                <input value={prixEdit} onChange={(e) => setPrixEdit(e.target.value)} className="w-full bg-[#F0EFE6] rounded-lg px-3 py-2 text-[13px] outline-none" placeholder="Prix" />
+                <textarea value={descriptionEdit} onChange={(e) => setDescriptionEdit(e.target.value)} rows={2} className="w-full bg-[#F0EFE6] rounded-lg px-3 py-2 text-[13px] outline-none resize-none" placeholder="Description" />
+                <div className="flex gap-2">
+                  <button onClick={() => sauvegarderEdition(a.id)} className="flex-1 bg-[#1B3B2F] text-[#FAF6EF] font-bold text-[12px] py-2 rounded-lg">Enregistrer</button>
+                  <button onClick={() => setEnEdition(null)} className="flex-1 bg-[#F0EFE6] text-[#5C7268] font-bold text-[12px] py-2 rounded-lg">Annuler</button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 mt-2.5 pt-2.5 border-t border-[#F0EFE6]">
+                {a.statut === "active" && (
+                  <button onClick={() => marquer(a.id)} className="text-[11px] font-bold text-[#B5541F] bg-[#F5E4D5] px-3 py-1.5 rounded-full">
+                    Marquer vendu
+                  </button>
+                )}
+                <button onClick={() => ouvrirEdition(a)} className="text-[11px] font-bold text-[#5C7268] bg-[#F0EFE6] px-3 py-1.5 rounded-full">
+                  Modifier
+                </button>
+                <button onClick={() => supprimer(a.id)} className="text-[11px] font-bold text-white bg-[#B5541F] px-3 py-1.5 rounded-full ml-auto">
+                  Supprimer
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </div>
