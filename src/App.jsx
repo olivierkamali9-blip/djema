@@ -76,9 +76,9 @@ export default function DjemaApp() {
           />
         )}
         {ecran === "profil" && (
-          <EcranProfil utilisateur={utilisateur} onDeconnexion={async () => { await deconnexion(); }} />
+          <EcranProfil utilisateur={utilisateur} onDeconnexion={async () => { await deconnexion(); }} onNaviguer={setEcran} />
         )}
-        {ecran === "mesAnnonces" && <EcranMesAnnonces onRetour={() => setEcran("accueil")} />}
+        {ecran === "mesAnnonces" && <EcranMesAnnonces onRetour={() => setEcran("profil")} />}
 
         {["accueil", "messagerie", "profil"].includes(ecran) && !(ecran === "messagerie" && conversationOuverte) && (
           <NavigationBas ecranActif={ecran} onNaviguer={setEcran} />
@@ -616,7 +616,7 @@ function EcranMessagerie({ conversationOuverte, onOuvrirConversation, onRetour }
 }
 
 // ---------- PROFIL ----------
-function EcranProfil({ utilisateur, onDeconnexion }) {
+function EcranProfil({ utilisateur, onDeconnexion, onNaviguer }) {
   const [profil, setProfil] = useState(null);
   const [modeEdition, setModeEdition] = useState(false);
   const [nom, setNom] = useState("");
@@ -726,23 +726,30 @@ function EcranProfil({ utilisateur, onDeconnexion }) {
 
       <div className="flex-1 overflow-y-auto pb-6">
         {ongletActif === "annonces" && (
-          <div className="grid grid-cols-2 gap-3 p-4">
-            {mesAnnonces.length === 0 && <p className="col-span-2 text-center text-[#8A9A91] text-[13px] pt-6">Aucune annonce publiée pour l'instant</p>}
-            {mesAnnonces.map((a) => (
-              <div key={a.id} className="bg-white rounded-2xl overflow-hidden border border-[#EFE9DB]">
-                {a.photos?.[0] ? (
-                  <img src={a.photos[0]} alt={a.titre} className="w-full h-28 object-cover" />
-                ) : (
-                  <div className="w-full h-28 bg-[#F0EFE6] flex items-center justify-center">
-                    <Camera className="w-6 h-6 text-[#C9BFA8]" strokeWidth={1.5} />
+          <div className="p-4">
+            {mesAnnonces.length > 0 && (
+              <button onClick={() => onNaviguer("mesAnnonces")} className="w-full bg-[#1B3B2F] text-[#FAF6EF] font-bold text-[13px] py-3 rounded-2xl mb-3">
+                Gérer mes annonces (modifier / supprimer)
+              </button>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              {mesAnnonces.length === 0 && <p className="col-span-2 text-center text-[#8A9A91] text-[13px] pt-6">Aucune annonce publiée pour l'instant</p>}
+              {mesAnnonces.map((a) => (
+                <div key={a.id} className="bg-white rounded-2xl overflow-hidden border border-[#EFE9DB]">
+                  {a.photos?.[0] ? (
+                    <img src={a.photos[0]} alt={a.titre} className="w-full h-28 object-cover" />
+                  ) : (
+                    <div className="w-full h-28 bg-[#F0EFE6] flex items-center justify-center">
+                      <Camera className="w-6 h-6 text-[#C9BFA8]" strokeWidth={1.5} />
+                    </div>
+                  )}
+                  <div className="p-2.5">
+                    <p className="text-[12px] font-semibold text-[#232323] truncate">{a.titre}</p>
+                    <p className="text-[13px] font-extrabold text-[#B5541F] mt-0.5">{a.prix}</p>
                   </div>
-                )}
-                <div className="p-2.5">
-                  <p className="text-[12px] font-semibold text-[#232323] truncate">{a.titre}</p>
-                  <p className="text-[13px] font-extrabold text-[#B5541F] mt-0.5">{a.prix}</p>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
         {ongletActif === "avis" && (
