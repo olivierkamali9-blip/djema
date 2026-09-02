@@ -1,0 +1,371 @@
+import React, { useState, useRef, useEffect } from "react";
+import { ArrowLeft, Mic, Square, Loader2, CheckCircle2, AlertCircle, RotateCcw } from "lucide-react";
+import { publierAnnonce, recupererCategories } from "../lib/djemaApi";
+
+// ============================================
+// DJEMA VOICE — Publier une annonce par la voix
+// Pipeline : Enregistrement → Transcription (3 modèles) → Extraction (Claude) → Confirmation → Publication
+// Construit pour le Sahara CodeSwitch Africa Challenge 2026
+// ============================================
+
+const ETATS = ["Neuf", "Très bon état", "Usé", "Très abîmé"];
+
+// Convertit un Blob audio en base64 (sans le préfixe data:...)
+function blobEnBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const lecteur = new FileReader();
+    lecteur.onloadend = () => resolve(lecteur.result.split(",")[1]);
+    lecteur.onerror = reject;
+    lecteur.readAsDataURL(blob);
+  });
+}
+
+export default function EcranPublierVocal({ utilisateur, onPublie, onRetour }) {
+  const [etape, setEtape] = useState("enregistrer"); // enregistrer | transcription | extraction | verification | publication_ok | erreur
+  const [enregistrementEnCours, setEnregistrementEnCours] = useState(false);
+  const [dureeSecondes, setDureeSecondes] = useState(0);
+  const [audioURL, setAudioURL] = useState(null);
+  const [benchmark, setBenchmark] = useState(null);
+  const [champs, setChamps] = useState(null);
+  const [categories, setCategories] = useState([]);
+  const [messageErreur, setMessageErreur] = useState("");
+  const [envoiEnCours, setEnvoiEnCours] = useState(false);
+
+  const mediaRecorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const intervalRef = useRef(null);
+  const audioBlobRef = useRef(null);
+
+  useEffect(() => {
+    recupererCategories().then(({ data }) => setCategories(data || []));
+  }, []);
+
+  // ---------- Enregistrement ----------
+  const demarrerEnregistrement = async () => {
+    setMessageErreur("");
+    try {
+      const flux = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(flux, { mimeType: "audio/webm" });
+      chunksRef.current = [];
+      recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
+      recorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        audioBlobRef.current = blob;
+        setAudioURL(URL.createObjectURL(blob));
+        flux.getTracks().forEach((t) => t.stop());
+      };
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setEnregistrementEnCours(true);
+      setDureeSecondes(0);
+      intervalRef.current = setInterval(() => setDureeSecondes((d) => d + 1), 1000);
+    } catch (e) {
+      setMessageErreur("Impossible d'accéder au micro. Vérifie les autorisations de ton navigateur.");
+    }
+  };
+
+  const arreterEnregistrement = () => {
+    mediaRecorderRef.current?.stop();
+    setEnregistrementEnCours(false);
+    clearInterval(intervalRef.current);
+  };
+
+  const recommencer = () => {
+    setAudioURL(null);
+    audioBlobRef.current = null;
+    setDureeSecondes(0);
+    setEtape("enregistrer");
+    setMessageErreur("");
+    setBenchmark(null);
+    setChamps(null);
+  };
+
+  // ---------- Pipeline : transcription + extraction ----------
+  const lancerAnalyse = async () => {
+    if (!audioBlobRef.current) return;
+    setEtape("transcription");
+    setMessageErreur("");
+    try {
+      const audioBase64 = await blobEnBase64(audioBlobRef.current);
+
+      const repTranscription = await fetch("/api/transcribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ audioBase64, mimeType: "audio/webm" }),
+      });
+      const dataTranscription = await repTranscription.json();
+      if (!repTranscription.ok) throw new Error(dataTranscription.error || "Erreur de transcription");
+
+      setBenchmark(dataTranscription.resultats);
+
+      if (!dataTranscription.texte_principal) {
+        throw new Error("Aucun modèle n'a réussi à transcrire l'audio. Réessaie dans un endroit plus calme.");
+      }
+
+      setEtape("extraction");
+      const repExtraction = await fetch("/api/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ texte: dataTranscription.texte_principal }),
+      });
+      const dataExtraction = await repExtraction.json();
+      if (!repExtraction.ok) throw new Error(dataExtraction.error || "Erreur d'extraction");
+
+      setChamps({ ...dataExtraction.extrait, texte_transcrit: dataTranscription.texte_principal });
+      setEtape("verification");
+    } catch (e) {
+      setMessageErreur(e.message);
+      setEtape("erreur");
+    }
+  };
+
+  // ---------- Publication finale ----------
+  const publier = async () => {
+    if (!champs) return;
+    setEnvoiEnCours(true);
+    setMessageErreur("");
+
+    const categorieTrouvee = categories.find((c) => c.nom === champs.categorie && !c.categorie_parent_id);
+    if (!categorieTrouvee) {
+      setMessageErreur("Catégorie introuvable, corrige-la avant de publier.");
+      setEnvoiEnCours(false);
+      return;
+    }
+
+    const { error } = await publierAnnonce({
+      titre: champs.titre,
+      description: champs.description,
+      prix: champs.prix,
+      quartier: champs.quartier,
+      categorie_id: categorieTrouvee.id,
+      sous_categorie_id: null,
+      etat_produit: champs.categorie === "Vente" ? champs.etat_produit || null : null,
+      photos: [],
+      statut: "active",
+    });
+
+    setEnvoiEnCours(false);
+    if (error) {
+      setMessageErreur(error.message || "Erreur lors de la publication");
+      return;
+    }
+    setEtape("publication_ok");
+  };
+
+  const modifierChamp = (nom, valeur) => setChamps((prev) => ({ ...prev, [nom]: valeur }));
+
+  const formatDuree = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+
+  return (
+    <>
+      <header className="bg-[#1B3B2F] px-5 pt-10 pb-4 shrink-0 flex items-center gap-3">
+        <button onClick={onRetour} className="w-9 h-9 rounded-full bg-[#254539] flex items-center justify-center">
+          <ArrowLeft className="w-4 h-4 text-[#FAF6EF]" strokeWidth={2.5} />
+        </button>
+        <h1 className="text-[#FAF6EF] font-bold text-base">Publier avec la voix</h1>
+      </header>
+
+      <div className="flex-1 overflow-y-auto px-5 pt-8 pb-28 space-y-6">
+        {/* ÉTAPE 1 : Enregistrement */}
+        {etape === "enregistrer" && (
+          <div className="flex flex-col items-center gap-6 pt-8">
+            <p className="text-center text-[14px] text-[#5C7268] px-4">
+              Parle naturellement, comme tu le ferais avec un ami. Décris ce que tu veux vendre, chercher, ou proposer.
+            </p>
+
+            {!audioURL ? (
+              <>
+                <button
+                  onClick={enregistrementEnCours ? arreterEnregistrement : demarrerEnregistrement}
+                  className={`w-24 h-24 rounded-full flex items-center justify-center transition-colors ${
+                    enregistrementEnCours ? "bg-[#B5541F]" : "bg-[#1B3B2F]"
+                  }`}
+                >
+                  {enregistrementEnCours ? (
+                    <Square className="w-8 h-8 text-white" fill="white" />
+                  ) : (
+                    <Mic className="w-9 h-9 text-white" strokeWidth={2} />
+                  )}
+                </button>
+                <span className="text-[13px] font-semibold text-[#5C7268]">
+                  {enregistrementEnCours ? formatDuree(dureeSecondes) : "Appuie pour parler"}
+                </span>
+              </>
+            ) : (
+              <div className="w-full flex flex-col items-center gap-4">
+                <audio src={audioURL} controls className="w-full" />
+                <div className="flex gap-3 w-full">
+                  <button
+                    onClick={recommencer}
+                    className="flex-1 py-3 rounded-xl border border-[#EFE9DB] text-[#5C7268] font-bold text-[13px] flex items-center justify-center gap-2"
+                  >
+                    <RotateCcw className="w-4 h-4" /> Recommencer
+                  </button>
+                  <button
+                    onClick={lancerAnalyse}
+                    className="flex-1 py-3 rounded-xl bg-[#1B3B2F] text-[#FAF6EF] font-bold text-[13px]"
+                  >
+                    Continuer
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {messageErreur && (
+              <p className="text-[13px] text-[#B5541F] text-center flex items-center gap-1">
+                <AlertCircle className="w-4 h-4 shrink-0" /> {messageErreur}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* ÉTAPE 2/3 : Transcription + extraction en cours */}
+        {(etape === "transcription" || etape === "extraction") && (
+          <div className="flex flex-col items-center gap-4 pt-16">
+            <Loader2 className="w-8 h-8 text-[#1B3B2F] animate-spin" />
+            <p className="text-[14px] font-semibold text-[#1B3B2F]">
+              {etape === "transcription" ? "Écoute en cours..." : "Je structure ton annonce..."}
+            </p>
+          </div>
+        )}
+
+        {/* ÉTAPE 4 : Vérification / correction */}
+        {etape === "verification" && champs && (
+          <div className="space-y-4">
+            <div className="bg-[#F5F1E6] rounded-xl p-3">
+              <p className="text-[11px] font-bold text-[#8A9A91] uppercase tracking-wide mb-1">Ce que j'ai compris</p>
+              <p className="text-[13px] text-[#5C7268] italic">"{champs.texte_transcrit}"</p>
+            </div>
+
+            {champs.champs_manquants?.length > 0 && (
+              <p className="text-[12px] text-[#B5541F] flex items-center gap-1">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                Complète : {champs.champs_manquants.join(", ")}
+              </p>
+            )}
+
+            <label className="text-[12px] font-bold text-[#5C7268] uppercase tracking-wide block">Catégorie</label>
+            <div className="flex gap-2 flex-wrap">
+              {["Vente", "Recherche", "Emploi", "Service"].map((c) => (
+                <button
+                  key={c}
+                  onClick={() => modifierChamp("categorie", c)}
+                  className={`px-3.5 py-2 rounded-full text-[12px] font-bold ${
+                    champs.categorie === c ? "bg-[#B5541F] text-[#FAF6EF]" : "bg-white border border-[#EFE9DB] text-[#5C7268]"
+                  }`}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+
+            <input
+              value={champs.titre || ""}
+              onChange={(e) => modifierChamp("titre", e.target.value)}
+              placeholder="Titre"
+              className="w-full bg-white border border-[#EFE9DB] rounded-xl px-4 py-3 text-[14px] outline-none"
+            />
+            <textarea
+              value={champs.description || ""}
+              onChange={(e) => modifierChamp("description", e.target.value)}
+              rows={3}
+              placeholder="Description"
+              className="w-full bg-white border border-[#EFE9DB] rounded-xl px-4 py-3 text-[14px] outline-none resize-none"
+            />
+            <div className="flex gap-3">
+              <input
+                value={champs.prix || ""}
+                onChange={(e) => modifierChamp("prix", e.target.value)}
+                placeholder={champs.categorie === "Emploi" ? "Salaire" : "Prix"}
+                className="flex-1 bg-white border border-[#EFE9DB] rounded-xl px-4 py-3 text-[14px] outline-none"
+              />
+              <input
+                value={champs.quartier || ""}
+                onChange={(e) => modifierChamp("quartier", e.target.value)}
+                placeholder="Quartier"
+                className="flex-1 bg-white border border-[#EFE9DB] rounded-xl px-4 py-3 text-[14px] outline-none"
+              />
+            </div>
+
+            {champs.categorie === "Vente" && (
+              <>
+                <label className="text-[12px] font-bold text-[#5C7268] uppercase tracking-wide block">État</label>
+                <div className="flex gap-2 flex-wrap">
+                  {ETATS.map((e) => (
+                    <button
+                      key={e}
+                      onClick={() => modifierChamp("etat_produit", e)}
+                      className={`px-3.5 py-2 rounded-full text-[12px] font-bold ${
+                        champs.etat_produit === e ? "bg-[#1B3B2F] text-[#FAF6EF]" : "bg-white border border-[#EFE9DB] text-[#5C7268]"
+                      }`}
+                    >
+                      {e}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {messageErreur && (
+              <p className="text-[13px] text-[#B5541F] text-center flex items-center gap-1">
+                <AlertCircle className="w-4 h-4 shrink-0" /> {messageErreur}
+              </p>
+            )}
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={recommencer}
+                className="flex-1 py-3 rounded-xl border border-[#EFE9DB] text-[#5C7268] font-bold text-[13px]"
+              >
+                Recommencer
+              </button>
+              <button
+                onClick={publier}
+                disabled={envoiEnCours}
+                className="flex-1 py-3 rounded-xl bg-[#1B3B2F] text-[#FAF6EF] font-bold text-[13px] disabled:opacity-50"
+              >
+                {envoiEnCours ? "Publication..." : "Publier"}
+              </button>
+            </div>
+
+            {/* Benchmark discret pour usage interne / dossier de candidature */}
+            {benchmark && (
+              <details className="text-[11px] text-[#8A9A91] pt-2">
+                <summary className="cursor-pointer font-semibold">Détails techniques (benchmark modèles)</summary>
+                <div className="mt-2 space-y-1">
+                  {benchmark.map((r) => (
+                    <div key={r.modele}>
+                      <b>{r.modele}</b> — {r.erreur ? `erreur: ${r.erreur}` : `${r.duree_ms}ms — "${r.texte}"`}
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
+          </div>
+        )}
+
+        {/* ÉTAPE 5 : Succès */}
+        {etape === "publication_ok" && (
+          <div className="flex flex-col items-center gap-4 pt-16">
+            <CheckCircle2 className="w-14 h-14 text-[#1B3B2F]" />
+            <p className="text-[15px] font-bold text-[#1B3B2F]">Annonce publiée !</p>
+            <button onClick={onPublie} className="px-6 py-3 rounded-xl bg-[#1B3B2F] text-[#FAF6EF] font-bold text-[13px]">
+              Voir mes annonces
+            </button>
+          </div>
+        )}
+
+        {/* Erreur bloquante */}
+        {etape === "erreur" && (
+          <div className="flex flex-col items-center gap-4 pt-16">
+            <AlertCircle className="w-12 h-12 text-[#B5541F]" />
+            <p className="text-[14px] text-center text-[#5C7268] px-4">{messageErreur}</p>
+            <button onClick={recommencer} className="px-6 py-3 rounded-xl bg-[#1B3B2F] text-[#FAF6EF] font-bold text-[13px]">
+              Réessayer
+            </button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}

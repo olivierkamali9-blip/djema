@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Search, SlidersHorizontal, Heart, MessageCircle, MapPin, Home, PlusCircle, User, Inbox, ArrowLeft, Phone, Mail, ArrowRight, Star, ShieldCheck, Eye, Send, Camera, X, Settings, Grid3x3, MessageSquareText, CheckCircle2 } from "lucide-react";
+import { Search, SlidersHorizontal, Heart, MessageCircle, MapPin, Home, PlusCircle, User, Inbox, ArrowLeft, Phone, Mail, ArrowRight, Star, ShieldCheck, Eye, Send, Camera, X, Settings, Grid3x3, MessageSquareText, CheckCircle2, Mic } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
 import {
   inscriptionParEmail, connexionParEmail, deconnexion, utilisateurActuel,
@@ -10,6 +10,7 @@ import {
   modifierAnnonce, supprimerAnnonce, supprimerMessage, supprimerConversation, supprimerCompte,
   envoyerCodeSMS, verifierCodeSMS,
 } from "./lib/djemaApi";
+import EcranPublierVocal from "./components/EcranPublierVocal";
 
 // ============================================
 // DJEMA — Application complète
@@ -100,7 +101,10 @@ export default function DjemaApp() {
           />
         )}
         {ecran === "publier" && (
-          <EcranPublier utilisateur={utilisateur} onPublie={() => setEcran("accueil")} onRetour={() => setEcran("accueil")} />
+          <EcranPublier utilisateur={utilisateur} onPublie={() => setEcran("accueil")} onRetour={() => setEcran("accueil")} onPublierVocal={() => setEcran("publierVocal")} />
+        )}
+        {ecran === "publierVocal" && (
+          <EcranPublierVocal utilisateur={utilisateur} onPublie={() => setEcran("mesAnnonces")} onRetour={() => setEcran("publier")} />
         )}
         {ecran === "messagerie" && (
           <EcranMessagerie
@@ -487,7 +491,7 @@ function EcranDetail({ annonce, utilisateur, onRetour, onOuvrirMessagerie }) {
 // ---------- PUBLIER ----------
 const ETATS = ["Neuf", "Très bon état", "Usé", "Très abîmé"];
 
-function EcranPublier({ utilisateur, onPublie, onRetour }) {
+function EcranPublier({ utilisateur, onPublie, onRetour, onPublierVocal }) {
   const [titre, setTitre] = useState("");
   const [description, setDescription] = useState("");
   const [prix, setPrix] = useState("");
@@ -550,7 +554,12 @@ function EcranPublier({ utilisateur, onPublie, onRetour }) {
         <button onClick={onRetour} className="w-9 h-9 rounded-full bg-[#254539] flex items-center justify-center">
           <ArrowLeft className="w-4 h-4 text-[#FAF6EF]" strokeWidth={2.5} />
         </button>
-        <h1 className="text-[#FAF6EF] font-bold text-base">Publier une annonce</h1>
+        <h1 className="text-[#FAF6EF] font-bold text-base flex-1">Publier une annonce</h1>
+        {onPublierVocal && (
+          <button onClick={onPublierVocal} className="w-9 h-9 rounded-full bg-[#B5541F] flex items-center justify-center shrink-0">
+            <Mic className="w-4 h-4 text-white" strokeWidth={2.5} />
+          </button>
+        )}
       </header>
       <div className="flex-1 overflow-y-auto px-5 pt-5 pb-28 space-y-4">
         {/* Catégorie */}
