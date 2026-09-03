@@ -1,16 +1,17 @@
 // ============================================
 // API SERVERLESS (Vercel) — Transcription vocale multi-modèles
 // Reçoit un fichier audio en base64, le transcrit en parallèle via :
-//   1. Sahara (Intron)   — le modèle obligatoire du challenge
-//   2. Whisper (OpenAI)  — modèle de comparaison n°1
-//   3. Gemini (Google)   — modèle de comparaison n°2
+//   1. Sahara (Intron)        — le modèle obligatoire du challenge
+//   2. Whisper large-v3 (Groq) — hébergé gratuitement par Groq, modèle de comparaison n°1
+//   3. Gemini (Google)         — gratuit via Google AI Studio, modèle de comparaison n°2
 // Retourne les 3 transcriptions + le temps de réponse de chacune,
 // pour servir de données de benchmark exigées par Sahara CodeSwitch Challenge.
 //
 // Les clés API restent ici, côté serveur — jamais exposées au navigateur.
+// 100% gratuit : aucune de ces 3 clés ne nécessite de carte bancaire.
 // À configurer dans Vercel : Project Settings → Environment Variables
 //   SAHARA_API_KEY
-//   OPENAI_API_KEY
+//   GROQ_API_KEY
 //   GOOGLE_API_KEY
 // ============================================
 
@@ -57,11 +58,11 @@ async function transcrireSahara(audioBase64, mimeType) {
   }
 }
 
-// ---------- Whisper (OpenAI) ----------
+// ---------- Whisper via Groq (hébergement gratuit de Whisper large-v3) ----------
 async function transcrireWhisper(audioBase64, mimeType) {
-  const cle = process.env.OPENAI_API_KEY;
+  const cle = process.env.GROQ_API_KEY;
   if (!cle) {
-    return { modele: "whisper", texte: null, erreur: "OPENAI_API_KEY manquante", duree_ms: 0 };
+    return { modele: "whisper", texte: null, erreur: "GROQ_API_KEY manquante", duree_ms: 0 };
   }
   const debut = Date.now();
   try {
@@ -69,15 +70,15 @@ async function transcrireWhisper(audioBase64, mimeType) {
     const extension = mimeType.includes("webm") ? "webm" : mimeType.includes("mp4") ? "mp4" : "wav";
     const formData = new FormData();
     formData.append("file", new Blob([buffer], { type: mimeType }), `audio.${extension}`);
-    formData.append("model", "whisper-1");
+    formData.append("model", "whisper-large-v3");
 
-    const reponse = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    const reponse = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
       method: "POST",
       headers: { Authorization: `Bearer ${cle}` },
       body: formData,
     });
     const data = await reponse.json();
-    if (!reponse.ok) throw new Error(data.error?.message || "Erreur API Whisper");
+    if (!reponse.ok) throw new Error(data.error?.message || "Erreur API Groq/Whisper");
     return { modele: "whisper", texte: data.text || "", erreur: null, duree_ms: Date.now() - debut };
   } catch (e) {
     return { modele: "whisper", texte: null, erreur: e.message, duree_ms: Date.now() - debut };
