@@ -24,6 +24,12 @@ export const config = {
 };
 
 // ---------- Sahara (Intron) ----------
+// Doc officielle : https://docs.voice.intron.io/docs/stt/file-upload-sync
+// IMPORTANT : le lingala n'existe PAS dans la liste officielle des langues
+// Sahara (ni seul, ni en mélange) — on utilise "sw" (Swahili-English, la seule
+// paire code-switch officiellement proche de notre contexte). On s'attend donc
+// à ce que Sahara galère sur les segments en lingala : c'est documenté comme
+// résultat de benchmark, pas caché.
 async function transcrireSahara(audioBase64, mimeType) {
   const cle = process.env.SAHARA_API_KEY;
   if (!cle) {
@@ -31,25 +37,35 @@ async function transcrireSahara(audioBase64, mimeType) {
   }
   const debut = Date.now();
   try {
-    // NOTE : endpoint à ajuster une fois la documentation Sahara reçue par email.
-    // Structure standard prévue pour une API de transcription REST.
-    const reponse = await fetch("https://api.intron.io/sahara/v1/transcribe", {
+    const buffer = Buffer.from(audioBase64, "base64");
+    const extension = mimeType.includes("webm") ? "webm" : mimeType.includes("mp4") ? "mp4" : "wav";
+    const formData = new FormData();
+    formData.append("audio_file_name", `djema_${Date.now()}`);
+    formData.append("audio_file_blob", new Blob([buffer], { type: mimeType }), `audio.${extension}`);
+    formData.append("use_language_asr_input", "sw");
+
+    const reponse = await fetch("https://infer.voice.intron.io/file/v1/upload/sync", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${cle}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        audio: audioBase64,
-        mime_type: mimeType,
-        language_hints: ["fr", "ln", "sw"], // français, lingala, swahili
-      }),
+      headers: { Authorization: `Bearer ${cle}` },
+      body: formData,
     });
     const data = await reponse.json();
+
+    if (reponse.status === 503) {
+      // Fichier trop long ou traitement lent : Sahara traite en asynchrone.
+      // Pour le prototype, on remonte l'info plutôt que de faire du polling complexe.
+      return {
+        modele: "sahara",
+        texte: null,
+        erreur: `Traitement asynchrone (file_id: ${data?.data?.file_id || "inconnu"}) — réessayer avec un audio plus court`,
+        duree_ms: Date.now() - debut,
+      };
+    }
     if (!reponse.ok) throw new Error(data.message || "Erreur API Sahara");
+
     return {
       modele: "sahara",
-      texte: data.transcript || data.text || "",
+      texte: data.data?.audio_transcript || "",
       erreur: null,
       duree_ms: Date.now() - debut,
     };
