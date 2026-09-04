@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
-import { ArrowLeft, Mic, Square, Loader2, CheckCircle2, AlertCircle, RotateCcw } from "lucide-react";
-import { publierAnnonce, recupererCategories } from "../lib/djemaApi";
+import { ArrowLeft, Mic, Square, Loader2, CheckCircle2, AlertCircle, RotateCcw, Camera, X } from "lucide-react";
+import { publierAnnonce, recupererCategories, envoyerPhoto } from "../lib/djemaApi";
 
 // ============================================
 // DJEMA VOICE — Publier une annonce par la voix
@@ -28,6 +28,8 @@ export default function EcranPublierVocal({ utilisateur, onPublie, onRetour }) {
   const [benchmark, setBenchmark] = useState(null);
   const [champs, setChamps] = useState(null);
   const [categories, setCategories] = useState([]);
+  const [photos, setPhotos] = useState([]);
+  const [envoiPhotoEnCours, setEnvoiPhotoEnCours] = useState(false);
   const [messageErreur, setMessageErreur] = useState("");
   const [envoiEnCours, setEnvoiEnCours] = useState(false);
 
@@ -140,7 +142,7 @@ export default function EcranPublierVocal({ utilisateur, onPublie, onRetour }) {
       categorie_id: categorieTrouvee.id,
       sous_categorie_id: null,
       etat_produit: champs.categorie === "Vente" ? champs.etat_produit || null : null,
-      photos: [],
+      photos,
       statut: "active",
     });
 
@@ -153,6 +155,18 @@ export default function EcranPublierVocal({ utilisateur, onPublie, onRetour }) {
   };
 
   const modifierChamp = (nom, valeur) => setChamps((prev) => ({ ...prev, [nom]: valeur }));
+
+  const choisirPhotos = async (e) => {
+    const fichiers = Array.from(e.target.files).slice(0, 5 - photos.length);
+    setEnvoiPhotoEnCours(true);
+    for (const fichier of fichiers) {
+      const { url, error } = await envoyerPhoto(fichier, "annonces");
+      if (!error) setPhotos((prev) => [...prev, url]);
+    }
+    setEnvoiPhotoEnCours(false);
+  };
+
+  const retirerPhoto = (index) => setPhotos((prev) => prev.filter((_, i) => i !== index));
 
   const formatDuree = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
@@ -243,6 +257,25 @@ export default function EcranPublierVocal({ utilisateur, onPublie, onRetour }) {
                 Complète : {champs.champs_manquants.join(", ")}
               </p>
             )}
+
+            <label className="text-[12px] font-bold text-[#5C7268] uppercase tracking-wide block">Photos (5 max)</label>
+            <div className="flex gap-2 flex-wrap">
+              {photos.map((url, i) => (
+                <div key={i} className="relative w-20 h-20 rounded-2xl overflow-hidden shrink-0">
+                  <img src={url} className="w-full h-full object-cover" alt="" />
+                  <button onClick={() => retirerPhoto(i)} className="absolute top-1 right-1 w-5 h-5 bg-black/50 rounded-full flex items-center justify-center">
+                    <X className="w-3 h-3 text-white" strokeWidth={3} />
+                  </button>
+                </div>
+              ))}
+              {photos.length < 5 && (
+                <label className="w-20 h-20 rounded-2xl border-2 border-dashed border-[#C9BFA8] flex flex-col items-center justify-center gap-1 shrink-0 cursor-pointer">
+                  <input type="file" accept="image/*" multiple className="hidden" onChange={choisirPhotos} />
+                  <Camera className="w-5 h-5 text-[#B5541F]" strokeWidth={2} />
+                  <span className="text-[10px] font-semibold text-[#8A9A91]">{envoiPhotoEnCours ? "Envoi..." : "Ajouter"}</span>
+                </label>
+              )}
+            </div>
 
             <label className="text-[12px] font-bold text-[#5C7268] uppercase tracking-wide block">Catégorie</label>
             <div className="flex gap-2 flex-wrap">
