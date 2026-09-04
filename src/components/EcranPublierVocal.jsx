@@ -396,6 +396,18 @@ export default function EcranPublierVocal({ utilisateur, onPublie, onRetour }) {
             <button onClick={recommencer} className="px-6 py-3 rounded-xl bg-[#1B3B2F] text-[#FAF6EF] font-bold text-[13px]">
               Réessayer
             </button>
+            {benchmark && (
+              <details open className="text-[11px] text-[#8A9A91] pt-2 w-full">
+                <summary className="cursor-pointer font-semibold">Détails techniques (pourquoi ça a échoué)</summary>
+                <div className="mt-2 space-y-1">
+                  {benchmark.map((r) => (
+                    <div key={r.modele}>
+                      <b>{r.modele}</b> — {r.erreur ? `erreur: ${r.erreur}` : `${r.duree_ms}ms — "${r.texte}"`}
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
           </div>
         )}
       </div>
