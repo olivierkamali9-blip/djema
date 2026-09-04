@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Search, SlidersHorizontal, Heart, MessageCircle, MapPin, Home, PlusCircle, User, Inbox, ArrowLeft, Phone, Mail, ArrowRight, Star, ShieldCheck, Eye, Send, Camera, X, Settings, Grid3x3, MessageSquareText, CheckCircle2, Mic } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { Search, SlidersHorizontal, Heart, MessageCircle, MapPin, Home, PlusCircle, User, Inbox, ArrowLeft, Phone, Mail, ArrowRight, Star, ShieldCheck, Eye, Send, Camera, X, Settings, Grid3x3, MessageSquareText, CheckCircle2, Mic, Loader2 } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
 import {
   inscriptionParEmail, connexionParEmail, deconnexion, utilisateurActuel,
@@ -318,6 +318,11 @@ function EcranAccueil({ onOuvrirAnnonce, onNaviguer }) {
   const [filtresOuverts, setFiltresOuverts] = useState(false);
   const [quartierFiltre, setQuartierFiltre] = useState("");
   const [prixMax, setPrixMax] = useState("");
+  const [rechercheVocaleEnCours, setRechercheVocaleEnCours] = useState(false);
+  const [ecouteEnCours, setEcouteEnCours] = useState(false);
+  const [confirmationVocale, setConfirmationVocale] = useState("");
+  const recorderRechercheRef = useRef(null);
+  const chunksRechercheRef = useRef([]);
 
   useEffect(() => {
     recupererCategories().then(({ data }) => setCategories(data || []));
@@ -334,6 +339,63 @@ function EcranAccueil({ onOuvrirAnnonce, onNaviguer }) {
     .filter((a) => !quartierFiltre || a.quartier.toLowerCase().includes(quartierFiltre.toLowerCase()))
     .filter((a) => !prixMax || parseInt((a.prix || "0").replace(/\D/g, "")) <= parseInt(prixMax || "999999999"));
 
+  const rechercheVocale = async () => {
+    if (ecouteEnCours) {
+      recorderRechercheRef.current?.stop();
+      setEcouteEnCours(false);
+      return;
+    }
+    try {
+      const flux = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(flux, { mimeType: "audio/webm" });
+      chunksRechercheRef.current = [];
+      recorder.ondataavailable = (e) => chunksRechercheRef.current.push(e.data);
+      recorder.onstop = async () => {
+        flux.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunksRechercheRef.current, { type: "audio/webm" });
+        setRechercheVocaleEnCours(true);
+        setConfirmationVocale("");
+        try {
+          const audioBase64 = await new Promise((resolve, reject) => {
+            const lecteur = new FileReader();
+            lecteur.onloadend = () => resolve(lecteur.result.split(",")[1]);
+            lecteur.onerror = reject;
+            lecteur.readAsDataURL(blob);
+          });
+          const repTranscription = await fetch("/api/transcribe-rapide", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ audioBase64, mimeType: "audio/webm" }),
+          });
+          const dataTranscription = await repTranscription.json();
+          if (!dataTranscription.texte) throw new Error("Rien entendu");
+
+          const repExtraction = await fetch("/api/extract-recherche", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ texte: dataTranscription.texte }),
+          });
+          const dataExtraction = await repExtraction.json();
+          const extrait = dataExtraction.extrait || {};
+
+          setRecherche(extrait.mots_cles || "");
+          if (extrait.categorie) setCategorieActive(extrait.categorie);
+          setQuartierFiltre(extrait.quartier || "");
+          setPrixMax(extrait.prix_max || "");
+          setConfirmationVocale(extrait.resume_confirmation || "");
+        } catch (e) {
+          setConfirmationVocale("Je n'ai pas bien compris, réessaie ou tape ta recherche.");
+        }
+        setRechercheVocaleEnCours(false);
+      };
+      recorder.start();
+      recorderRechercheRef.current = recorder;
+      setEcouteEnCours(true);
+    } catch (e) {
+      setConfirmationVocale("Impossible d'accéder au micro.");
+    }
+  };
+
   return (
     <>
       <header className="bg-[#1B3B2F] px-5 pt-10 pb-4 shrink-0">
@@ -341,11 +403,22 @@ function EcranAccueil({ onOuvrirAnnonce, onNaviguer }) {
           <div className="flex-1 flex items-center gap-2 bg-[#254539] rounded-full px-4 py-2.5">
             <Search className="w-4 h-4 text-[#9BB0A5]" strokeWidth={2.5} />
             <input value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Chercher un produit, un service..." className="bg-transparent text-sm text-[#FAF6EF] placeholder:text-[#7A9186] outline-none flex-1 min-w-0" />
+            <button onClick={rechercheVocale} className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center">
+              {rechercheVocaleEnCours ? (
+                <Loader2 className="w-4 h-4 text-[#E8A93E] animate-spin" />
+              ) : (
+                <Mic className={`w-4 h-4 ${ecouteEnCours ? "text-[#B5541F]" : "text-[#9BB0A5]"}`} strokeWidth={2.5} />
+              )}
+            </button>
           </div>
           <button onClick={() => setFiltresOuverts(!filtresOuverts)} className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 active:scale-95 transition-transform ${filtresOuverts || quartierFiltre || prixMax ? "bg-[#E8A93E]" : "bg-[#B5541F]"}`}>
             <SlidersHorizontal className="w-4 h-4 text-[#1B3B2F]" strokeWidth={2.5} />
           </button>
         </div>
+
+        {confirmationVocale && (
+          <p className="mt-2.5 text-[12px] text-[#E8A93E] font-medium px-1">{confirmationVocale}</p>
+        )}
 
         {filtresOuverts && (
           <div className="mt-3 bg-[#254539] rounded-2xl p-3.5 space-y-2.5">
