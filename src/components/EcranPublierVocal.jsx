@@ -108,12 +108,12 @@ export default function EcranPublierVocal({ utilisateur, onPublie, onRetour }) {
       const repExtraction = await fetch("/api/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ texte: dataTranscription.texte_principal }),
+        body: JSON.stringify({ transcriptions: dataTranscription.resultats }),
       });
       const dataExtraction = await repExtraction.json();
       if (!repExtraction.ok) throw new Error(dataExtraction.error || "Erreur d'extraction");
 
-      setChamps({ ...dataExtraction.extrait, texte_transcrit: dataTranscription.texte_principal });
+      setChamps({ ...dataExtraction.extrait, texte_transcrit: dataExtraction.extrait.transcription_reconciliee });
       setEtape("verification");
     } catch (e) {
       setMessageErreur(e.message);
