@@ -20,6 +20,79 @@ function blobEnBase64(blob) {
   });
 }
 
+// Petit input avec un bouton micro à côté, pour compléter rapidement
+// un champ manquant sans avoir à réenregistrer toute la phrase.
+function ChampAvecMicro({ valeur, onChange, placeholder, className, extraireChiffre }) {
+  const [enCours, setEnCours] = useState(false);
+  const [enregistre, setEnregistre] = useState(false);
+  const recorderRef = useRef(null);
+  const chunksRef = useRef([]);
+
+  const toggle = async () => {
+    if (enregistre) {
+      recorderRef.current?.stop();
+      setEnregistre(false);
+      return;
+    }
+    try {
+      const flux = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(flux, { mimeType: "audio/webm" });
+      chunksRef.current = [];
+      recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
+      recorder.onstop = async () => {
+        flux.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        setEnCours(true);
+        try {
+          const audioBase64 = await blobEnBase64(blob);
+          const rep = await fetch("/api/transcribe-rapide", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ audioBase64, mimeType: "audio/webm" }),
+          });
+          const data = await rep.json();
+          if (data.texte) {
+            const val = extraireChiffre ? (data.texte.match(/\d+/)?.[0] || data.texte) : data.texte;
+            onChange(val.trim());
+          }
+        } catch (e) {
+          // silencieux : l'utilisateur peut toujours taper manuellement
+        }
+        setEnCours(false);
+      };
+      recorder.start();
+      recorderRef.current = recorder;
+      setEnregistre(true);
+    } catch (e) {
+      // micro refusé/indisponible : l'utilisateur tape manuellement
+    }
+  };
+
+  return (
+    <div className="flex-1 relative">
+      <input
+        value={valeur}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={className}
+      />
+      <button
+        type="button"
+        onClick={toggle}
+        className={`absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full flex items-center justify-center ${
+          enregistre ? "bg-[#B5541F]" : "bg-[#EFE9DB]"
+        }`}
+      >
+        {enCours ? (
+          <Loader2 className="w-3.5 h-3.5 text-[#5C7268] animate-spin" />
+        ) : (
+          <Mic className={`w-3.5 h-3.5 ${enregistre ? "text-white" : "text-[#5C7268]"}`} strokeWidth={2.5} />
+        )}
+      </button>
+    </div>
+  );
+}
+
 export default function EcranPublierVocal({ utilisateur, onPublie, onRetour }) {
   const [etape, setEtape] = useState("enregistrer"); // enregistrer | transcription | extraction | verification | publication_ok | erreur
   const [enregistrementEnCours, setEnregistrementEnCours] = useState(false);
@@ -306,17 +379,18 @@ export default function EcranPublierVocal({ utilisateur, onPublie, onRetour }) {
               className="w-full bg-white border border-[#EFE9DB] rounded-xl px-4 py-3 text-[14px] outline-none resize-none"
             />
             <div className="flex gap-3">
-              <input
-                value={champs.prix || ""}
-                onChange={(e) => modifierChamp("prix", e.target.value)}
+              <ChampAvecMicro
+                valeur={champs.prix || ""}
+                onChange={(v) => modifierChamp("prix", v)}
                 placeholder={champs.categorie === "Emploi" ? "Salaire" : "Prix"}
-                className="flex-1 bg-white border border-[#EFE9DB] rounded-xl px-4 py-3 text-[14px] outline-none"
+                className="w-full bg-white border border-[#EFE9DB] rounded-xl pl-4 pr-10 py-3 text-[14px] outline-none"
+                extraireChiffre
               />
-              <input
-                value={champs.quartier || ""}
-                onChange={(e) => modifierChamp("quartier", e.target.value)}
+              <ChampAvecMicro
+                valeur={champs.quartier || ""}
+                onChange={(v) => modifierChamp("quartier", v)}
                 placeholder="Quartier"
-                className="flex-1 bg-white border border-[#EFE9DB] rounded-xl px-4 py-3 text-[14px] outline-none"
+                className="w-full bg-white border border-[#EFE9DB] rounded-xl pl-4 pr-10 py-3 text-[14px] outline-none"
               />
             </div>
 
