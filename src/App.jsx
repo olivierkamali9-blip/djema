@@ -1019,6 +1019,8 @@ function EcranMesAnnonces({ onRetour }) {
   const [titreEdit, setTitreEdit] = useState("");
   const [prixEdit, setPrixEdit] = useState("");
   const [descriptionEdit, setDescriptionEdit] = useState("");
+  const [photosEdit, setPhotosEdit] = useState([]);
+  const [envoiPhotoEnCours, setEnvoiPhotoEnCours] = useState(false);
 
   const charger = () => recupererMesAnnonces().then(({ data }) => setAnnonces(data || []));
 
@@ -1040,10 +1042,23 @@ function EcranMesAnnonces({ onRetour }) {
     setTitreEdit(a.titre);
     setPrixEdit(a.prix);
     setDescriptionEdit(a.description || "");
+    setPhotosEdit(a.photos || []);
   };
 
+  const choisirPhotosEdit = async (e) => {
+    const fichiers = Array.from(e.target.files).slice(0, 5 - photosEdit.length);
+    setEnvoiPhotoEnCours(true);
+    for (const fichier of fichiers) {
+      const { url, error } = await envoyerPhoto(fichier, "annonces");
+      if (!error) setPhotosEdit((prev) => [...prev, url]);
+    }
+    setEnvoiPhotoEnCours(false);
+  };
+
+  const retirerPhotoEdit = (index) => setPhotosEdit((prev) => prev.filter((_, i) => i !== index));
+
   const sauvegarderEdition = async (id) => {
-    await modifierAnnonce(id, { titre: titreEdit, prix: prixEdit, description: descriptionEdit });
+    await modifierAnnonce(id, { titre: titreEdit, prix: prixEdit, description: descriptionEdit, photos: photosEdit });
     setEnEdition(null);
     charger();
   };
@@ -1083,6 +1098,24 @@ function EcranMesAnnonces({ onRetour }) {
 
             {enEdition === a.id ? (
               <div className="mt-3 pt-3 border-t border-[#F0EFE6] space-y-2">
+                <label className="text-[11px] font-bold text-[#5C7268] uppercase tracking-wide block">Photos (5 max)</label>
+                <div className="flex gap-2 flex-wrap">
+                  {photosEdit.map((url, i) => (
+                    <div key={i} className="relative w-16 h-16 rounded-xl overflow-hidden shrink-0">
+                      <img src={url} className="w-full h-full object-cover" alt="" />
+                      <button onClick={() => retirerPhotoEdit(i)} className="absolute top-0.5 right-0.5 w-4 h-4 bg-black/50 rounded-full flex items-center justify-center">
+                        <X className="w-2.5 h-2.5 text-white" strokeWidth={3} />
+                      </button>
+                    </div>
+                  ))}
+                  {photosEdit.length < 5 && (
+                    <label className="w-16 h-16 rounded-xl border-2 border-dashed border-[#C9BFA8] flex flex-col items-center justify-center gap-0.5 shrink-0 cursor-pointer">
+                      <input type="file" accept="image/*" multiple className="hidden" onChange={choisirPhotosEdit} />
+                      <Camera className="w-4 h-4 text-[#B5541F]" strokeWidth={2} />
+                      <span className="text-[9px] font-semibold text-[#8A9A91]">{envoiPhotoEnCours ? "..." : "Ajouter"}</span>
+                    </label>
+                  )}
+                </div>
                 <input value={titreEdit} onChange={(e) => setTitreEdit(e.target.value)} className="w-full bg-[#F0EFE6] rounded-lg px-3 py-2 text-[13px] outline-none" placeholder="Titre" />
                 <input value={prixEdit} onChange={(e) => setPrixEdit(e.target.value)} className="w-full bg-[#F0EFE6] rounded-lg px-3 py-2 text-[13px] outline-none" placeholder="Prix" />
                 <textarea value={descriptionEdit} onChange={(e) => setDescriptionEdit(e.target.value)} rows={2} className="w-full bg-[#F0EFE6] rounded-lg px-3 py-2 text-[13px] outline-none resize-none" placeholder="Description" />
